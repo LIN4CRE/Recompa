@@ -32,14 +32,9 @@ jobs:
 
       - run: npm ci
 
-      # The fingerprint catalogue is generated data (~4.1 MB), not committed, so
-      # the deployment builds it. A token raises the GitHub API rate limit; the
-      # workflow token is read-only, which is all the blob API needs.
-      - name: Build fingerprint catalogue
-        run: npm run fetch:dat
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # The fingerprint catalogue (10 files, ~4.1 MB) is committed, so this build
+      # needs no network at all. The CI workflow separately verifies the snapshot
+      # against upstream with `npm run fetch:dat -- --check`.
       - name: Build site
         run: npm run build
         env:

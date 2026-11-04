@@ -38,6 +38,14 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The fingerprint catalogue is committed data. Rebuild it from upstream and
+      # compare content (ignoring the volatile `generatedAt` field) so a stale
+      # snapshot fails here instead of shipping. Needs only a read-only token.
+      - name: Fingerprint catalogue is current
+        run: npm run check:dat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         run: npm run build
 

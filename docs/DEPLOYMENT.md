@@ -12,9 +12,13 @@ files and — ideally — sets two headers.
 
 ```bash
 npm ci
-npm run fetch:dat      # regenerates the 31,655-fingerprint catalogue; already committed, so optional
+npm run check:dat      # asserts the committed 31,655-fingerprint catalogue still matches upstream
 npm run build          # → dist/
 ```
+
+`npm run fetch:dat` regenerates the catalogue (it is committed, so this is only needed to refresh it
+or to add a platform). `npm run check:dat` rebuilds it in memory and compares content while ignoring
+the volatile `generatedAt` field, exiting non-zero if the snapshot is stale; CI runs it on every push.
 
 `npm ci` runs `postinstall → scripts/sync-cores.mjs`, which copies third-party attribution files
 (the mGBA README/manifest required by MPL-2.0) into `public/cores/mgba/`. The mGBA WASM binary

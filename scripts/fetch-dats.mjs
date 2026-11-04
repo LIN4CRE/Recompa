@@ -249,7 +249,22 @@ async function fetchBlob(sha) {
   return text;
 }
 
+/**
+ * Strip the volatile build timestamp so two catalogue documents can be compared
+ * for *content* equality. Regenerating always rewrites `generatedAt`, so a plain
+ * `git diff` can never distinguish "stale data" from "fetched one second later".
+ */
+function withoutTimestamp(doc) {
+  const { generatedAt: _ignored, ...rest } = doc;
+  return JSON.stringify(rest);
+}
+
 async function main() {
+  // `--check` verifies that the committed catalogue still matches upstream
+  // without touching the working tree. Used by CI, so a stale snapshot fails
+  // loudly instead of being silently committed over.
+  const check = process.argv.includes('--check');
+  const stale = [];
   const requested = process.argv.slice(2).filter((a) => !a.startsWith('-'));
   const targets = requested.length ? requested : Object.keys(PLATFORM_DATS);
   for (const t of targets) {
@@ -289,6 +304,30 @@ async function main() {
       node.size,
     );
     const outFile = path.join(OUT_DIR, `${platform}.json`);
+
+    if (check) {
+      const committed = await readFile(outFile, 'utf8')
+        .then((t) => JSON.parse(t))
+        .catch(() => null);
+      const upToDate = committed && withoutTimestamp(committed) === withoutTimestamp(built);
+      console.log(
+        `${upToDate ? '✓' : '✗'} ${platform.padEnd(8)} ${built.count.toLocaleString()} fingerprints ${
+          upToDate ? 'match the committed snapshot' : 'DIFFER from the committed snapshot — run npm run fetch:dat'
+        }`,
+      );
+      if (!upToDate) stale.push(platform);
+      indexEntries.push({
+        platform,
+        file: `${platform}.json`,
+        count: built.count,
+        bytes: committed ? JSON.stringify(committed).length : 0,
+        datVersion: built.datVersion,
+        datBlob: node.sha,
+        licence: 'CC-BY-SA-4.0',
+      });
+      continue;
+    }
+
     await writeFile(outFile, JSON.stringify(built));
     const written = (await stat(outFile)).size;
     console.log(`✓ ${built.count.toLocaleString()} fingerprints → ${path.relative(process.cwd(), outFile)} (${(written / 1024 / 1024).toFixed(2)} MiB)`);
@@ -305,6 +344,17 @@ async function main() {
 
   if (indexEntries.length === 0) {
     throw new Error('No DAT files were written.');
+  }
+
+  if (check) {
+    const total = indexEntries.reduce((n, e) => n + e.count, 0);
+    if (stale.length) {
+      throw new Error(
+        `stale catalogue snapshot for ${stale.join(', ')} — run "npm run fetch:dat" and commit the result`,
+      );
+    }
+    console.log(`\n✓ catalogue snapshot is current: ${indexEntries.length} platforms, ${total.toLocaleString()} fingerprints.`);
+    return;
   }
 
   const existing = await readFile(path.join(OUT_DIR, 'index.json'), 'utf8')
