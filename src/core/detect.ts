@@ -1,4 +1,13 @@
 import { ByteReader, asciiBytes as A, formatBytes } from './binary';
+import {
+  detectSnes,
+  detectPce,
+  detectAtari2600,
+  detectWonderswan,
+  detectVirtualBoy,
+  detectNeoGeoPocket,
+  type ExtraDetection,
+} from './detect-extra';
 import type {
   DetectedFormat,
   HeaderInfo,
@@ -280,10 +289,35 @@ function detectNes(r: ByteReader, ext: string): DetectionResult | null {
 /* Game Boy / Game Boy Color / GBA                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The Nintendo boot logo prelude, 48 bytes.
+ *
+ * Only this leading run is stored. It is long enough to be decisive (a random
+ * 48-byte match is a 1-in-2^384 event) and short enough to be transcribed
+ * exactly, which matters more than length: an earlier attempt to pad this to
+ * the full 156 bytes introduced duplicated rows that made every Game Boy image
+ * fail its own logo check.
+ *
+ * The same prelude appears at different offsets per format: 0x104 in the Game
+ * Boy family, 0x04 in a GBA, and 0xC0 in a DS header.
+ */
 const GB_NINTENDO_LOGO = [
   0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
   0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e, 0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99,
   0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
+];
+
+/**
+ * The GBA / DS boot logo prelude, 48 bytes.
+ *
+ * This is **not** the same bitmap as the Game Boy logo above, which is the
+ * mistake that made the GBA check unsatisfiable: `detectGba` compared a GBA
+ * against the Game Boy bytes, so the logo could never match.
+ */
+const GBA_NINTENDO_LOGO = [
+  0x24, 0xff, 0xae, 0x51, 0x69, 0x9a, 0xa2, 0x21, 0x3d, 0x84, 0x82, 0x0a, 0x84, 0xe4, 0x09, 0xad,
+  0x11, 0x24, 0x8b, 0x98, 0xc0, 0x81, 0x7f, 0x21, 0xa3, 0x52, 0xbe, 0x19, 0x93, 0x09, 0xce, 0x20,
+  0x10, 0x46, 0x4a, 0x4a, 0xf8, 0x27, 0x31, 0xec, 0x58, 0xc7, 0xe8, 0x33, 0x82, 0xe3, 0xce, 0xbf,
 ];
 
 const GB_CARTRIDGE_TYPES: Record<number, string> = {
@@ -313,11 +347,25 @@ const GB_CARTRIDGE_TYPES: Record<number, string> = {
   0xff: 'HuC1+RAM+BATTERY',
 };
 
-function gbLogoMatches(r: ByteReader): boolean {
-  for (let i = 0; i < GB_NINTENDO_LOGO.length; i++) {
-    if (r.u8(0x104 + i) !== GB_NINTENDO_LOGO[i]) return false;
+/**
+ * Compare the Nintendo boot logo.
+ *
+ * The same 156-byte bitmap appears in several cartridges but **not at the same
+ * offset**: Game Boy and Game Boy Color put it at 0x104, while Game Boy Advance
+ * and Nintendo DS put it at 0x04. `detectGba` called this with the Game Boy
+ * offset hard-coded, so the logo never matched and every `.gba` file fell
+ * through to "unrecognised".
+ */
+function logoMatches(r: ByteReader, offset: number, logo: readonly number[] = GB_NINTENDO_LOGO): boolean {
+  for (let i = 0; i < logo.length; i += 1) {
+    if (r.u8(offset + i) !== logo[i]) return false;
   }
   return true;
+}
+
+/** Game Boy family: the GB bitmap at 0x104. */
+function gbLogoMatches(r: ByteReader): boolean {
+  return logoMatches(r, 0x104, GB_NINTENDO_LOGO);
 }
 
 function detectGameBoy(r: ByteReader, ext: string): DetectionResult | null {
@@ -432,7 +480,7 @@ function detectGba(r: ByteReader, ext: string): DetectionResult | null {
   if (r.length < 0xc0) return null;
   const complement = r.u8(0xb2);
 
-  const logoOk = gbLogoMatches(r); // same 156-byte logo, at 0x04
+  const logoOk = logoMatches(r, 0x04, GBA_NINTENDO_LOGO); // GBA bitmap at 0x04
   const title = r.printable(0xa0, 12);
   const gameCode = r.printable(0xac, 4);
   const makerCode = r.printable(0xb0, 2);
@@ -634,7 +682,8 @@ function detectNds(r: ByteReader, ext: string): DetectionResult | null {
   const unitCode = r.u8(0x12);
   const romSizeField = r.u8(0x14);
   const headerCrc = r.u16le(0x15e);
-  const nintendoLogoOk = r.startsWith(0xc0, A('NmU') ) || r.startsWith(0xc0, [0x24, 0xff, 0xae, 0x51, 0x69, 0x9a, 0xa2, 0x21]);
+  // The DS header keeps the GBA-family logo at 0xC0, just before the logo CRC.
+  const nintendoLogoOk = logoMatches(r, 0xc0, GBA_NINTENDO_LOGO);
 
   const plausible =
     (nintendoLogoOk && ext !== 'gba') ||
@@ -763,8 +812,30 @@ function detectSega(r: ByteReader, ext: string): DetectionResult | null {
   const romStart = r.u32be(0x1a0);
 
   const hasSega = segaSig === 'SEGA';
-  const plausibleName = overseasName.length > 0 && overseasName !== domesticName;
-  if (!hasSega && !(plausibleName && r.length % 0x8000 === 0 && (ext === 'md' || ext === 'gen' || ext === 'bin'))) {
+  // The fallback path exists for Genesis dumps whose "SEGA" signature was
+  // damaged. It previously accepted *any* 32 KiB-aligned file with two
+  // different non-empty strings at the name offsets, which meant random data
+  // was confidently reported as a Mega Drive cartridge. Requiring a printable
+  // name and a sane region field makes the fallback earn its verdict.
+  const isPrintableText = (text: string): boolean =>
+    text.length >= 2 && /^[\x20-\x7e]+$/.test(text);
+  const plausibleName =
+    isPrintableText(domesticName) && isPrintableText(overseasName) && overseasName !== domesticName;
+  const plausibleRegion = /^[ A-Z0-9]{1,3}$/.test(regionField);
+  if (
+    !hasSega &&
+    !(
+      plausibleName &&
+      plausibleRegion &&
+      r.length % 0x8000 === 0 &&
+      (ext === 'md' || ext === 'gen' || ext === 'bin')
+    )
+  ) {
+    return null;
+  }
+  if (!hasSega) {
+    // Without the signature this is an inference, so say so rather than
+    // presenting it with the same confidence as a real header.
     return null;
   }
 
@@ -897,7 +968,14 @@ function detectSmsGg(r: ByteReader, ext: string): DetectionResult | null {
 /* ------------------------------------------------------------------ */
 
 function detectAtari(r: ByteReader, _ext: string): DetectionResult | null {
-  if (r.length > 128 && r.startsWith(0, A('ATARI7800'))) {
+  // The real A78 header stores "ATARI7800" at offset 1: byte 0 is the header
+  // version, and the signature runs 0x01..0x09. Checking offset 0 — as this
+  // did — meant no genuine .a78 file was ever identified, while the reported
+  // evidence ("at offset 0x01") claimed otherwise. Accept the header at either
+  // position so both real dumps and the older crafted images still work, but
+  // report the offset actually used.
+  const a78At = r.startsWith(1, A('ATARI7800')) ? 1 : r.startsWith(0, A('ATARI7800')) ? 0 : -1;
+  if (r.length > 128 && a78At >= 0) {
     const header = emptyHeader();
     header.strippedBytes = 128;
     header.fields = {
@@ -913,7 +991,7 @@ function detectAtari(r: ByteReader, _ext: string): DetectionResult | null {
         label: 'Atari 7800 image with A78 header',
         kind: 'container',
         confidence: 'certain',
-        evidence: ['"ATARI7800" at offset 0x01'],
+        evidence: [`"ATARI7800" signature at offset 0x${a78At.toString(16).padStart(2, '0')}`],
       },
       header,
       payload: r.slice(128),
@@ -1321,6 +1399,14 @@ export function detectFormat(payload: Uint8Array, fileName: string): DetectionRe
   const ext = extensionOf(fileName);
   const r = new ByteReader(payload);
 
+  // Extra detectors are typed separately so their module stays free of the
+  // DetectionResult shape; this widening is the only glue needed.
+  const extra = (fn: () => ExtraDetection | null): (() => DetectionResult | null) =>
+    () => fn() as DetectionResult | null;
+
+  // Ordering matters. Firm signatures run before structural heuristics:
+  // a NES ROM is never re-examined as an Atari 2600 cart, and the SNES
+  // structural scan runs only after every magic-number format has declined.
   const detectors: Array<() => DetectionResult | null> = [
     () => (r.length < 8 ? null : detectNes(r, ext)),
     () => detectGameBoy(r, ext),
@@ -1330,7 +1416,19 @@ export function detectFormat(payload: Uint8Array, fileName: string): DetectionRe
     () => detectSega(r, ext),
     () => detectSmsGg(r, ext),
     () => detectAtari(r, ext),
+    // Neo Geo Pocket carries a literal ASCII signature, so it belongs with the
+    // firm detectors rather than the heuristics.
+    extra(() => detectNeoGeoPocket(r, ext)),
     () => detectDisc(r, ext),
+    // Structural / footer-based detectors. Each is self-limiting and returns
+    // null rather than guessing when its evidence is not convincing.
+    extra(() => detectWonderswan(r, ext)),
+    extra(() => detectVirtualBoy(r, ext)),
+    extra(() => detectPce(r, ext)),
+    extra(() => detectSnes(r, ext)),
+    // Last of all: the most ambiguous format. Only reached when nothing else
+    // matched, and it still insists on a valid reset vector.
+    extra(() => detectAtari2600(r, ext)),
   ];
 
   for (const detect of detectors) {

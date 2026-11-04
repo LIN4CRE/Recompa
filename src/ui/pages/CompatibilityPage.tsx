@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { Database, Search, ShieldCheck, Siren } from 'lucide-react';
-import { PLATFORMS, PLATFORM_BY_ID } from '@/core/platforms';
+import { PLATFORMS, PLATFORM_BY_ID, detectorLabel } from '@/core/platforms';
 import { fetchCatalogueIndex, type CatalogueIndex } from '@/core/catalogue';
 import { ENGINE_ADAPTERS } from '@/engines';
 import { descriptorsForUi, EXECUTION_PRIORITY, KNOWN_PORT_PROJECTS } from '@/core/planner';
@@ -243,9 +243,34 @@ function PlatformsTab({ catalogue, totalFingerprints }: { catalogue: CatalogueIn
                   </td>
                   <td className="px-3 py-2 font-mono text-[10px] text-ink-3">{platform.generation || '—'}</td>
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1 rounded bg-ice/10 px-1.5 py-0.5 font-mono text-[9px] text-ice">
-                      <ShieldCheck className="size-2.5" /> byte level
-                    </span>
+                    {(() => {
+                      // The label must match the detector that actually backs
+                      // this row. Declaring "byte level" for a platform with no
+                      // detector was simply wrong.
+                      const label = detectorLabel(platform.id as PlatformId);
+                      if (label.text === 'no detector') {
+                        return (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 font-mono text-[9px] text-ink-4">
+                            <ShieldCheck className="size-2.5" /> {label.text}
+                          </span>
+                        );
+                      }
+                      return (
+                        <span
+                          className={clsx(
+                            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[9px]',
+                            label.certain ? 'bg-ice/10 text-ice' : 'bg-amber/[0.1] text-amber',
+                          )}
+                          title={
+                            label.certain
+                              ? 'Identified from a literal signature or checksummed footer'
+                              : 'Inferred structurally; reported as probable, never certain'
+                          }
+                        >
+                          <ShieldCheck className="size-2.5" /> {label.text}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2 font-mono text-[10px]">
                     {entry ? (

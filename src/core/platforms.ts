@@ -45,6 +45,53 @@ const PCE_CD_BIOS: FirmwareRequirement = {
   optional: false,
 };
 
+/**
+ * Which detector, if any, actually identifies this platform.
+ *
+ * The compatibility page previously labelled **every** row "byte level", which
+ * was untrue for platforms with no detector at all. The UI now reads this map,
+ * so the claim it makes matches the code that backs it.
+ */
+export type DetectorStrength = 'signature' | 'structural' | 'footer' | 'none';
+
+export const DETECTOR_STRENGTH: Record<PlatformId, DetectorStrength> = {
+  nes: 'signature',
+  snes: 'structural',
+  gb: 'signature',
+  gbc: 'signature',
+  gba: 'signature',
+  n64: 'signature',
+  nds: 'signature',
+  genesis: 'signature',
+  sms: 'signature',
+  gg: 'signature',
+  pce: 'structural',
+  psx: 'signature',
+  psp: 'signature',
+  atari2600: 'structural',
+  atari7800: 'signature',
+  lynx: 'signature',
+  ws: 'footer',
+  vb: 'footer',
+  ngp: 'signature',
+  arcade: 'none',
+  unknown: 'none',
+};
+
+/** Human label for a detector strength, used in the compatibility table. */
+export function detectorLabel(platformId: PlatformId): { text: string; certain: boolean } {
+  switch (DETECTOR_STRENGTH[platformId]) {
+    case 'signature':
+      return { text: 'byte signature', certain: true };
+    case 'footer':
+      return { text: 'footer + checksum', certain: true };
+    case 'structural':
+      return { text: 'structural', certain: false };
+    default:
+      return { text: 'no detector', certain: false };
+  }
+}
+
 export const PLATFORMS: Platform[] = [
   {
     id: 'nes',
