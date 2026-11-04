@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-04T18:54:28.170Z",
+  "source": {
+    "repository": "libretro/libretro-database",
+    "branch": "master",
+    "dataset": "No-Intro (via libretro-database)",
+    "licence": "CC-BY-SA-4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "note": "Fingerprint metadata only (title/size/CRC/SHA-1). No game data is distributed. Titles are the property of their respective trademark holders."
+  },
+  "entries": [
+    {
+      "platform": "gb",
+      "file": "gb.json",
+      "count": 2115,
+      "bytes": 279221,
+      "datVersion": "2026.10.07",
+      "datBlob": "ed691437a611582b6b014cef8095cbeed375f6c2",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "gba",
+      "file": "gba.json",
+      "count": 3503,
+      "bytes": 485119,
+      "datVersion": "2026.10.07",
+      "datBlob": "5d27985aa64e006611219750aa9a6e21e7d9db36",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "gbc",
+      "file": "gbc.json",
+      "count": 2433,
+      "bytes": 330099,
+      "datVersion": "2026.10.07",
+      "datBlob": "e3426f1df173653a4d5195a34366475ba836655f",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "genesis",
+      "file": "genesis.json",
+      "count": 2656,
+      "bytes": 348111,
+      "datVersion": "2026.10.07",
+      "datBlob": "8bb350f7aff82182b9219ebd6fcf5a745d7ab797",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "gg",
+      "file": "gg.json",
+      "count": 607,
+      "bytes": 79331,
+      "datVersion": "2026.10.07",
+      "datBlob": "bf4cdc8b8b9fe56e44d5e2cd6e967b5a654939d7",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "n64",
+      "file": "n64.json",
+      "count": 2268,
+      "bytes": 299520,
+      "datVersion": "2026.10.07",
+      "datBlob": "1780e163971f989126ae98d55881151366c5dd94",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "nes",
+      "file": "nes.json",
+      "count": 13286,
+      "bytes": 1722479,
+      "datVersion": "2026.10.07",
+      "datBlob": "c3cb8b891815b51b29946a50d5eb9605f76e05f3",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "sms",
+      "file": "sms.json",
+      "count": 1057,
+      "bytes": 135717,
+      "datVersion": "2026.10.07",
+      "datBlob": "7b4e4ac75edb2ba33900d78b19f87602785bb47d",
+      "licence": "CC-BY-SA-4.0"
+    },
+    {
+      "platform": "snes",
+      "file": "snes.json",
+      "count": 3730,
+      "bytes": 494495,
+      "datVersion": "2026.10.07",
+      "datBlob": "e162e3f50f2fd9f48f258e4e6933adb481640db1",
+      "licence": "CC-BY-SA-4.0"
+    }
+  ]
+}

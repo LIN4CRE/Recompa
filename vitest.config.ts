@@ -1,0 +1,19 @@
+import { defineConfig } from 'vitest/config';
+import { fileURLToPath, URL } from 'node:url';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  test: {
+    include: ['tests/unit/**/*.test.ts'],
+    environment: 'node',
+    reporters: ['default'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/core/**/*.ts', 'src/analysis/**/*.ts'],
+    },
+  },
+});

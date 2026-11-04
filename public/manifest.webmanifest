@@ -1,0 +1,10 @@
+{
+  "name": "Recompa — ROM analysis & instant play",
+  "short_name": "Recompa",
+  "description": "Local-first ROM identification, recompilation auditing and browser gameplay.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06080b",
+  "theme_color": "#06080b",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

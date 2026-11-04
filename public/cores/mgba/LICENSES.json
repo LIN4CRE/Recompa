@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-11-04T19:02:40.384Z",
+  "packages": [
+    {
+      "name": "@thenick775/mgba-wasm",
+      "version": "2.6.0",
+      "licence": "MPL-2.0",
+      "homepage": "https://github.com/thenick775/mgba-wasm",
+      "note": "mGBA fork compiled to WebAssembly. MPL-2.0 source available at the upstream repository."
+    }
+  ]
+}

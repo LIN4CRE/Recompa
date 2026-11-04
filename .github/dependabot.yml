@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    # The two execution cores are pinned deliberately: adapters depend on their
+    # internals (see docs/DEPLOYMENT.md §5). Bumps must be tested by hand.
+    ignore:
+      - dependency-name: jsnes
+      - dependency-name: '@thenick775/mgba-wasm'
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      production-patch:
+        dependency-type: production
+        update-types: [patch]
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
