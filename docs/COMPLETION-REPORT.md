@@ -274,6 +274,16 @@ protection under *Settings → Code security*.
 
 - Deployment: live at <https://recompa.vercel.app>, public, with COOP/COEP applied.
 - Dependency audit: 0 vulnerabilities.
+- TypeScript moved to 7.0 (the `typescript-go` compiler), including the two config changes it
+  requires (`baseUrl` removed, relative `paths` targets) and a corrected `typecheck` script. Verified
+  on 7.0.2 and on Vercel's build machines; typecheck time fell from ~4 s to ~0.9 s.
+- Every GitHub Action aligned on one current major (checkout v7, setup-node v7, configure-pages v6,
+  deploy-pages v5, upload-artifact v7, upload-pages-artifact v5, codeql-action v4). Inputs and the
+  `node24` runtime were checked against each action's published manifest before merging, because CI
+  cannot run here to prove it.
+- Two install-time defects fixed: `npm run fetch:dat` now has a `--check` mode that compares
+  catalogue *content* (ignoring `generatedAt`), and `postinstall` no longer rewrites a committed
+  licence file on every install. Both previously made `npm ci` leave the tree dirty.
 
 ---
 
