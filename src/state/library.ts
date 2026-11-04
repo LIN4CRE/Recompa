@@ -14,6 +14,7 @@ import {
   listJobs,
 } from '@/db/database';
 import { plan } from '@/core/planner';
+import { biosStatus, platformNeedsBios } from '@/core/bios';
 import { detectEnvironment } from '@/core/environment';
 import { fetchInstalledEngines } from '@/engines/install-check';
 
@@ -71,7 +72,13 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     try {
       const environment = await detectEnvironment();
       const installed = await fetchInstalledEngines();
-      const { plan: jobPlan } = plan({ report, environment, installedEngines: installed });
+      // Firmware state decides whether a PS1 disc is actually launchable, so
+      // it must feed the plan rather than being assumed missing.
+      const biosInstalledFor = new Set<string>();
+      if (platformNeedsBios(report.platform?.id as never) && (await biosStatus(report.platform?.id as never)).installed) {
+        biosInstalledFor.add(report.platform!.id);
+      }
+      const { plan: jobPlan } = plan({ report, environment, installedEngines: installed, biosInstalledFor });
 
       const existing = get().games.find((g) => g.reportId === report.id) ??
         get().games.find((g) => g.payloadId === report.checksums.sha256);

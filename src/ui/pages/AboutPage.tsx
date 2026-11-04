@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, Scale, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Panel, SectionHeader } from '../components/primitives';
+import { SupportButton } from '../components/SupportButton';
 import { ENGINE_ADAPTERS } from '@/engines';
 import { descriptorsForUi } from '@/core/planner';
 import { fetchCatalogueIndex, type CatalogueIndex } from '@/core/catalogue';
@@ -87,6 +88,20 @@ export function AboutPage() {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
+        <Panel className="p-4">
+          <SectionHeader
+            eyebrow="Support"
+            title="Help keep this going"
+            description="Recompa is independent, ad-free and has no paid tier. If it is useful to you, you can buy the developer a smoke."
+          />
+          <div className="mt-2">
+            <SupportButton />
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-ink-4">
+            Entirely optional. Opens PayPal in a new tab; Recompa never sees or stores any payment detail.
+          </p>
+        </Panel>
+
         <Panel className="p-4">
           <SectionHeader eyebrow="Principles" title="What we refuse to do" />
           <ul className="space-y-1.5 text-[11px] leading-relaxed text-ink-3">

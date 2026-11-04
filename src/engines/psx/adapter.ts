@@ -330,12 +330,13 @@ export const EmulatorJsPsxAdapter: EngineAdapter = {
     blockers.push(...prereq.blockers);
     notes.push(...prereq.notes);
 
-    // BIOS: a real dependency, surfaced as a blocker so the UI can ask for it
-    // rather than failing opaquely at boot time.
-    const biosDep = report.dependencies.find((d) => d.required && /bios/i.test(d.name));
-    if (!biosDep?.suppliedBy) {
+    // BIOS: a real dependency. `biosInstalled` is supplied by the caller, which
+    // can read IndexedDB; canRun() is synchronous and cannot. When the caller
+    // cannot tell us, we keep the blocker — refusing to start is correct, and
+    // silently assuming firmware exists would produce a black screen.
+    if (input.biosInstalled !== true) {
       blockers.push(
-        'PlayStation BIOS required — supply your own dump (scph5500/5501/5502, 512 KiB). It is never bundled.',
+        'PlayStation BIOS not installed — add your own dump (scph5500/5501/5502, 512 KiB) in Settings. It is never bundled or downloaded.',
       );
     }
 

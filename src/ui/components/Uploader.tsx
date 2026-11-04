@@ -1,10 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { AlertTriangle, Archive, CheckCircle2, FileUp, FolderOpen, Loader2, ShieldCheck, UploadCloud } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  CheckCircle2,
+  FileUp,
+  FolderOpen,
+  FolderSearch,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  UploadCloud,
+  X,
+} from 'lucide-react';
 import { useLibrary } from '@/state/library';
 import { analyzeBytes } from '@/core/analyze';
 import { inspectArchive } from '@/lib/zip';
 import { resolveDiscSets, type DroppedFile, type DiscSet } from '@/core/discset';
+import {
+  filesFromDataTransfer,
+  filesFromFileList,
+  filesFromHandle,
+  groupScannedFiles,
+  diffScan,
+  isFolderPickerSupported,
+  type ScanFile,
+  type ScannedGame,
+} from '@/core/folderscan';
+import { listWatchedFolders, putWatchedFolder, deleteWatchedFolder, type WatchedFolderRecord } from '@/db/database';
 import { buildDiscArchive, needsArchive } from '@/engines/psx/discArchive';
 import { formatBytes } from '@/core/binary';
 import type { AnalysisReport, GameRecord, Job } from '@/core/types';
@@ -49,6 +72,10 @@ export function Uploader({
   const addReport = useLibrary((s) => s.addReport);
   const pushToast = useLibrary((s) => s.pushToast);
   const busy = phase !== 'idle' && phase !== 'done' && phase !== 'error';
+  const [folders, setFolders] = useState<WatchedFolderRecord[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanSummary, setScanSummary] = useState<string | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -264,10 +291,251 @@ export function Uploader({
     return () => window.removeEventListener('paste', onPaste);
   }, [autoStart, handleFiles]);
 
+  /* ------------------------- folder scanning ------------------------- */
+
+  const refreshFolders = useCallback(async () => {
+    try {
+      setFolders(await listWatchedFolders());
+    } catch {
+      /* IndexedDB unavailable — folder memory is simply absent */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshFolders();
+  }, [refreshFolders]);
+
+  /**
+   * Import the games a scan found.
+   *
+   * `only` restricts which games to import: on first scan that is everything,
+   * on rescan it is only what `diffScan` reported as new.
+   */
+  const importScanned = useCallback(
+    async (games: ScannedGame[], rootName: string) => {
+      const collected: UploadResult[] = [];
+      const failures: Array<{ file: string; message: string; detail?: string }> = [];
+
+      for (const game of games) {
+        const label = game.folder ? `${game.folder}/${game.set.entry}` : game.set.entry;
+
+        if (game.set.status === 'missing-companion' || game.set.status === 'invalid-sheet') {
+          failures.push({
+            file: label,
+            message: game.set.problems[0] ?? 'This disc set is incomplete.',
+            detail: game.files.map((f) => f.name).join(', ') || undefined,
+          });
+          continue;
+        }
+
+        try {
+          setPhase('reading');
+          setProgressLabel(`${label} · ${game.files.length} file${game.files.length === 1 ? '' : 's'}`);
+          let payload: Uint8Array;
+          let displayName = game.set.entry;
+          let archiveMeta: UploadResult['archive'] = null;
+
+          if (game.files.length > 1) {
+            setPhase('expanding');
+            setProgressLabel(`${label} · packaging ${game.files.length} files`);
+            const input = [];
+            for (const f of game.files) {
+              input.push({ name: f.name, bytes: new Uint8Array(await f.file.arrayBuffer()) });
+            }
+            const archive = await buildDiscArchive(input, game.set.entry);
+            payload = new Uint8Array(await archive.blob.arrayBuffer());
+            displayName = `${game.set.entry.replace(/\.[^.]+$/, '')}.zip`;
+            archiveMeta = { entries: game.files.length, selected: archive.entry };
+          } else {
+            payload = new Uint8Array(await game.files[0]!.file.arrayBuffer());
+          }
+
+          setPhase('analyzing');
+          setProgressLabel(`${displayName} · checksums`);
+          const report = await analyzeBytes(payload, displayName, {
+            archiveSize: archiveMeta ? payload.length : undefined,
+          });
+          if (archiveMeta) report.archive = { entries: [], selectedEntry: archiveMeta.selected };
+          report.discSet = {
+            entry: game.set.entry,
+            files: game.set.members.map((m) => m.name),
+            multiTrack: game.set.multiTrack,
+            trackCount: game.set.trackCount,
+          };
+          if (game.folder) report.folder = game.folder;
+
+          setPhase('storing');
+          const { game: record, job, duplicate } = await addReport(report, payload);
+          collected.push({
+            report,
+            game: record,
+            job,
+            duplicate,
+            fileName: label,
+            archive: archiveMeta,
+          });
+        } catch (error) {
+          failures.push({ file: label, message: error instanceof Error ? error.message : String(error) });
+        }
+      }
+
+      setPhase(collected.length ? 'done' : failures.length ? 'error' : 'done');
+      setErrors(failures);
+      setResults(collected);
+      if (collected.length) onComplete?.(collected);
+      const dupes = collected.filter((c) => c.duplicate).length;
+      setScanSummary(
+        `${rootName}: ${collected.length - dupes} imported` +
+          (dupes ? `, ${dupes} already in library` : '') +
+          (failures.length ? `, ${failures.length} not importable` : ''),
+      );
+      return collected;
+    },
+    [addReport, onComplete],
+  );
+
+  /** Scan a set of files (folder pick, folder drop, or a retained handle). */
+  const runScan = useCallback(
+    async (source: { files?: ScanFile[]; handle?: FileSystemDirectoryHandle; name: string }, rescanOf?: WatchedFolderRecord) => {
+      setScanning(true);
+      setErrors([]);
+      setResults([]);
+      setScanSummary(null);
+      try {
+        setPhase('expanding');
+        setProgressLabel(`Scanning ${source.name}…`);
+        const files = source.handle ? await filesFromHandle(source.handle) : (source.files ?? []);
+        const grouped = await groupScannedFiles(files, source.name);
+
+        let toImport = grouped.games;
+        let summaryPrefix = '';
+
+        if (rescanOf) {
+          const diff = diffScan(rescanOf.knownPaths, grouped.games);
+          toImport = diff.newGames;
+          summaryPrefix =
+            `${diff.newGames.length} new, ${diff.unchanged} unchanged` +
+            (diff.removed ? `, ${diff.removed} missing from disk` : '');
+          if (diff.newGames.length === 0) {
+            setScanSummary(`${source.name}: nothing new — ${summaryPrefix}.`);
+            setPhase('done');
+            return;
+          }
+        }
+
+        // Remember the folder so a rescan can re-walk it later.
+        const handle = source.handle ?? rescanOf?.handle;
+        if (handle) {
+          const knownPaths = Array.from(
+            new Set([...(rescanOf?.knownPaths ?? []), ...files.map((f) => f.relativePath)]),
+          );
+          await putWatchedFolder({
+            id: rescanOf?.id ?? `${Date.now()}_${source.name}`,
+            name: source.name,
+            handle,
+            addedAt: rescanOf?.addedAt ?? Date.now(),
+            lastScannedAt: Date.now(),
+            knownPaths,
+          });
+          await refreshFolders();
+        }
+
+        await importScanned(toImport, source.name);
+        if (summaryPrefix) setScanSummary(`${source.name}: ${summaryPrefix}.`);
+      } catch (error) {
+        setErrors([{ file: source.name, message: error instanceof Error ? error.message : String(error) }]);
+        setPhase('error');
+      } finally {
+        setScanning(false);
+      }
+    },
+    [importScanned, refreshFolders],
+  );
+
+  /** Ask for a folder using the File System Access API when available. */
+  const pickFolder = useCallback(async () => {
+    if (!isFolderPickerSupported()) {
+      folderInputRef.current?.click();
+      return;
+    }
+    try {
+      const handle = await (
+        window as unknown as {
+          showDirectoryPicker: (opts?: { mode?: string }) => Promise<FileSystemDirectoryHandle>;
+        }
+      ).showDirectoryPicker({ mode: 'read' });
+      // Persist the handle so this folder can be rescanned later.
+      await runScan({ handle, name: handle.name });
+    } catch (error) {
+      // A user dismissing the picker is not an error worth shouting about.
+      if ((error as Error).name !== 'AbortError') {
+        setErrors([{ file: 'folder', message: (error as Error).message }]);
+        setPhase('error');
+      }
+    }
+  }, [runScan]);
+
+  const rescanFolder = useCallback(
+    async (folder: WatchedFolderRecord) => {
+      try {
+        // Browsers drop handle permission between sessions; re-request it.
+        const handle = folder.handle as unknown as {
+          queryPermission?: (d: { mode: string }) => Promise<PermissionState>;
+          requestPermission?: (d: { mode: string }) => Promise<PermissionState>;
+        };
+        const state = (await handle.queryPermission?.({ mode: 'read' })) ?? 'granted';
+        if (state !== 'granted') {
+          const granted = (await handle.requestPermission?.({ mode: 'read' })) ?? 'denied';
+          if (granted !== 'granted') {
+            setErrors([
+              {
+                file: folder.name,
+                message: 'Permission to read this folder was not granted, so it cannot be rescanned.',
+                detail: 'Grant access when the browser asks, or pick the folder again.',
+              },
+            ]);
+            return;
+          }
+        }
+        await runScan({ handle: folder.handle, name: folder.name }, folder);
+      } catch (error) {
+        setErrors([{ file: folder.name, message: (error as Error).message }]);
+        setPhase('error');
+      }
+    },
+    [runScan],
+  );
+
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
-    if (event.dataTransfer?.files?.length) void handleFiles(event.dataTransfer.files);
+    const dt = event.dataTransfer;
+    if (!dt) return;
+    // Dropping a *folder* only exposes its contents through the entry API;
+    // `dataTransfer.files` is empty for directories in Chromium.
+    const hasEntries = Array.from(dt.items ?? []).some((i) => typeof i.webkitGetAsEntry === 'function');
+    if (hasEntries) {
+      void (async () => {
+        setScanning(true);
+        try {
+          const files = await filesFromDataTransfer(dt);
+          if (files.length === 0) return;
+          // A single flat selection behaves like before; a directory tree gets
+          // the full scan + grouping treatment.
+          const nested = files.some((f) => f.relativePath.includes('/'));
+          if (nested) {
+            const root = files[0]!.relativePath.split('/')[0]!;
+            await runScan({ files, name: root });
+          } else {
+            await handleFiles(files.map((f) => f.file));
+          }
+        } finally {
+          setScanning(false);
+        }
+      })();
+      return;
+    }
+    if (dt.files?.length) void handleFiles(dt.files);
   };
 
   return (
@@ -337,6 +605,9 @@ export function Uploader({
                 <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
                   <FolderOpen className="size-4" /> Choose ROM files
                 </button>
+                <button className="btn" onClick={() => void pickFolder()} disabled={scanning}>
+                  <FolderSearch className="size-4" /> Scan a folder
+                </button>
                 <span className="font-mono text-[11px] text-ink-4">or paste from clipboard</span>
               </div>
               <input
@@ -346,6 +617,23 @@ export function Uploader({
                 className="hidden"
                 onChange={(event) => {
                   if (event.target.files) void handleFiles(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+              <input
+                ref={folderInputRef}
+                type="file"
+                // Non-standard but universally supported attributes for
+                // recursive folder selection where the FS Access API is absent.
+                {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files?.length) {
+                    const name = (event.target.files[0] as File & { webkitRelativePath?: string })
+                      .webkitRelativePath?.split('/')[0];
+                    void runScan({ files: filesFromFileList(event.target.files), name: name || 'folder' });
+                  }
                   event.target.value = '';
                 }}
               />
@@ -364,6 +652,61 @@ export function Uploader({
           )}
         </div>
       </div>
+
+      {scanSummary && (
+        <div className="flex items-center gap-2 rounded-lg border border-ice/25 bg-ice/[0.06] px-3 py-2 text-xs text-ice">
+          <CheckCircle2 className="size-4" /> <span>{scanSummary}</span>
+        </div>
+      )}
+
+      {folders.length > 0 && !busy && (
+        <div className="rounded-[14px] border border-line-bright bg-panel/60 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="mono-label">Scanned folders</span>
+            <span className="font-mono text-[10px] text-ink-4">
+              {isFolderPickerSupported() ? 'rescan available' : 'rescan needs a re-pick in this browser'}
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {folders.map((folder) => (
+              <li key={folder.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/70 px-2.5 py-1.5">
+                <div className="min-w-0">
+                  <div className="truncate text-xs text-ink">{folder.name}</div>
+                  <div className="font-mono text-[10px] text-ink-4">
+                    {folder.knownPaths.length} file{folder.knownPaths.length === 1 ? '' : 's'} ·{' '}
+                    {folder.lastScannedAt ? new Date(folder.lastScannedAt).toLocaleString() : 'never scanned'}
+                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    className="btn h-7 px-2 text-[11px]"
+                    disabled={scanning || !isFolderPickerSupported()}
+                    onClick={() => void rescanFolder(folder)}
+                    title={
+                      isFolderPickerSupported()
+                        ? 'Re-walk this folder and import only what is new'
+                        : 'This browser cannot retain folder access; pick the folder again instead'
+                    }
+                  >
+                    <RefreshCw className={clsx('size-3', scanning && 'animate-spin')} /> Rescan
+                  </button>
+                  <button
+                    className="btn h-7 px-2 text-[11px]"
+                    disabled={scanning}
+                    onClick={async () => {
+                      await deleteWatchedFolder(folder.id);
+                      await refreshFolders();
+                    }}
+                    title="Forget this folder (does not delete imported games)"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {errors.length > 0 && (
         <ul className="space-y-2">

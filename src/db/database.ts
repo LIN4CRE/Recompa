@@ -2,6 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type {
   AnalysisReport,
   AppSettings,
+  BiosRecord,
   GameRecord,
   Job,
   SaveStateRecord,
@@ -20,6 +21,8 @@ import type {
 
 interface RecompaDB extends DBSchema {
   payloads: { key: string; value: StoredPayload };
+  bios: { key: string; value: BiosRecord };
+  folders: { key: string; value: WatchedFolderRecord };
   games: { key: string; value: GameRecord; indexes: { 'by-updated': number; 'by-platform': string } };
   reports: { key: string; value: AnalysisReport; indexes: { 'by-created': number } };
   jobs: { key: string; value: Job; indexes: { 'by-created': number; 'by-report': string } };
@@ -30,7 +33,7 @@ interface RecompaDB extends DBSchema {
 }
 
 export const DB_NAME = 'recompa';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<RecompaDB>> | null = null;
 
@@ -64,6 +67,13 @@ export function getDb(): Promise<IDBPDatabase<RecompaDB>> {
           tests.createIndex('by-started', 'startedAt');
         }
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        // v2: user-supplied firmware (BIOS) images. Added so the PlayStation
+        // adapter's BIOS requirement can actually be satisfied; previously the
+        // blocker existed with no way to clear it.
+        if (!db.objectStoreNames.contains('bios')) db.createObjectStore('bios', { keyPath: 'id' });
+        // v2: folders the user granted access to, so a rescan can re-walk the
+        // same handle without asking them to locate it again.
+        if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
       },
       blocked() {
         console.warn('[db] upgrade blocked by another tab — close other Recompa tabs.');
@@ -111,6 +121,52 @@ export async function totalPayloadBytes(): Promise<number> {
     cursor = await cursor.continue();
   }
   return total;
+}
+
+/* ---------------------------------- bios --------------------------------- */
+
+export async function putBios(record: BiosRecord): Promise<void> {
+  const db = await getDb();
+  await db.put('bios', record);
+}
+
+export async function getBiosForPlatform(platformId: string): Promise<BiosRecord | undefined> {
+  const db = await getDb();
+  return db.get('bios', `${platformId}:bios`);
+}
+
+export async function deleteBios(id: string): Promise<void> {
+  const db = await getDb();
+  await db.delete('bios', id);
+}
+
+/* -------------------------------- folders -------------------------------- */
+
+export interface WatchedFolderRecord {
+  id: string;
+  /** Display name. */
+  name: string;
+  /** The retained directory handle. */
+  handle: FileSystemDirectoryHandle;
+  addedAt: number;
+  lastScannedAt: number | null;
+  /** Relative paths imported so far, so a rescan can skip unchanged files. */
+  knownPaths: string[];
+}
+
+export async function putWatchedFolder(record: WatchedFolderRecord): Promise<void> {
+  const db = await getDb();
+  await db.put('folders', record);
+}
+
+export async function listWatchedFolders(): Promise<WatchedFolderRecord[]> {
+  const db = await getDb();
+  return db.getAll('folders');
+}
+
+export async function deleteWatchedFolder(id: string): Promise<void> {
+  const db = await getDb();
+  await db.delete('folders', id);
 }
 
 /* --------------------------------- games -------------------------------- */

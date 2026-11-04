@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import {
   AlertOctagon,
@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { useRoute } from '@/lib/router';
 import { useSettings } from '@/state/settings';
 import { useLibrary } from '@/state/library';
 import { DEFAULT_KEYBINDINGS, RESERVED_CODES, type LogicalButton } from '@/engines/input';
@@ -17,12 +18,25 @@ import { clearAllData, estimateStorage, exportBackup, importBackup, totalPayload
 import { bytes, Panel, SectionHeader, Tabs } from '../components/primitives';
 import { ProcessingPanel } from '../components/ProcessingPanel';
 import { detectEnvironment } from '@/core/environment';
+import { biosStatus, importBios, removeBios, type BiosStatus } from '@/core/bios';
 import type { RuntimeEnvironment } from '@/core/types';
 
-type Tab = 'playback' | 'controls' | 'data' | 'advanced';
+type Tab = 'playback' | 'controls' | 'firmware' | 'data' | 'advanced';
+
+const VALID_TABS: Tab[] = ['playback', 'controls', 'firmware', 'data', 'advanced'];
 
 export function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('playback');
+  // Deep links such as /settings?tab=firmware let the game page point straight
+  // at the fix for a "BIOS not installed" blocker instead of describing it.
+  const route = useRoute();
+  const requested = route.query.get('tab') as Tab | null;
+  const [tab, setTab] = useState<Tab>(requested && VALID_TABS.includes(requested) ? requested : 'playback');
+
+  useEffect(() => {
+    if (requested && VALID_TABS.includes(requested) && requested !== tab) setTab(requested);
+    // Only react to genuine URL changes; `tab` is owned by the user otherwise.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
   const { settings, update, reset, resetKeybindings } = useSettings();
   const games = useLibrary((s) => s.games);
   const hydrate = useLibrary((s) => s.hydrate);
@@ -53,6 +67,7 @@ export function SettingsPage() {
         tabs={[
           { id: 'playback', label: 'Playback & video' },
           { id: 'controls', label: 'Controls' },
+          { id: 'firmware', label: 'Firmware' },
           { id: 'data', label: 'Data & storage' },
           { id: 'advanced', label: 'Advanced' },
         ]}
@@ -157,6 +172,8 @@ export function SettingsPage() {
       )}
 
       {tab === 'controls' && <ControlsTab />}
+
+      {tab === 'firmware' && <FirmwareTab />}
 
       {tab === 'data' && (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -518,6 +535,120 @@ function Toggle({
         </span>
       </span>
     </button>
+  );
+}
+
+/**
+ * Firmware (BIOS) management.
+ *
+ * Disc-based consoles need a real BIOS that the user must supply; Recompa
+ * never ships or downloads one. Without this panel the PlayStation adapter's
+ * BIOS requirement could never be satisfied, so every PS1 game was blocked
+ * forever no matter what the user did.
+ */
+function FirmwareTab() {
+  const [status, setStatus] = useState<BiosStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const refresh = useCallback(async () => {
+    setStatus(await biosStatus('psx'));
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onPick = async (file: File) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const record = await importBios('psx', file.name, bytes);
+      setMessage({
+        kind: 'ok',
+        text: `${record.label} installed from ${record.fileName} (${record.size.toLocaleString()} bytes). ${record.validation.notes.join(' ')}`,
+      });
+      await refresh();
+    } catch (error) {
+      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await removeBios('psx');
+      setMessage({ kind: 'ok', text: 'Firmware removed from this device.' });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <Panel className="p-4">
+        <SectionHeader
+          eyebrow="Firmware"
+          title="PlayStation BIOS"
+          description="Required by the PlayStation core. Supplied by you, stored only on this device."
+        />
+        <div className="space-y-2">
+          <StatRow label="Status" value={status?.installed ? 'installed' : 'not installed'} />
+          {status?.record && (
+            <>
+              <StatRow label="File" value={status.record.fileName} />
+              <StatRow label="Size" value={`${status.record.size.toLocaleString()} bytes`} />
+              <StatRow label="SHA-256" value={status.record.sha256.slice(0, 32) + '…'} />
+            </>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
+            <Upload className="size-4" /> {status?.installed ? 'Replace BIOS file' : 'Add BIOS file'}
+          </button>
+          {status?.installed && (
+            <button className="btn" disabled={busy} onClick={() => void remove()}>
+              <Trash2 className="size-4" /> Remove
+            </button>
+          )}
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".bin,.rom"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onPick(file);
+              event.target.value = '';
+            }}
+          />
+        </div>
+
+        {message && (
+          <p className={clsx('mt-3 rounded-lg border p-2.5 text-[11px] leading-relaxed', message.kind === 'ok' ? 'border-mint/25 bg-mint/[0.06] text-mint' : 'border-rose/25 bg-rose/[0.06] text-rose')}>
+            {message.text}
+          </p>
+        )}
+      </Panel>
+
+      <Panel className="p-4">
+        <SectionHeader eyebrow="Before you add one" title="What a BIOS is, and isn't" />
+        <ul className="space-y-2 text-[11px] leading-relaxed text-ink-3">
+          <li>· A PlayStation BIOS is the console's own boot firmware. Games genuinely need it; there is no lawful way for Recompa to supply it.</li>
+          <li>· Dump it from a console you own. Recommended revisions: SCPH-5500 (Japan), SCPH-5501 (North America), SCPH-5502 (Europe).</li>
+          <li>· It is exactly 512 KiB (524,288 bytes). A different size is rejected before it can cause a confusing black screen.</li>
+          <li>· The file stays in this browser's IndexedDB. It is never uploaded, synced or shared.</li>
+          <li>· Recompa will not substitute a homebrew or unofficial BIOS: that changes which games work and would be a silent lie about compatibility.</li>
+          <li>· The image contents cannot be authenticated offline, so Recompa reports the size as valid but does not claim to identify the exact revision.</li>
+        </ul>
+      </Panel>
+    </div>
   );
 }
 

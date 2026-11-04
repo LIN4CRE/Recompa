@@ -71,6 +71,8 @@ export interface PlanInput {
   environment: RuntimeEnvironment;
   /** Ids of engines whose runtime payload is actually present. */
   installedEngines?: Set<string>;
+  /** Platforms whose firmware requirement is already satisfied locally. */
+  biosInstalledFor?: Set<string>;
 }
 
 export interface PlanResult {
@@ -168,7 +170,12 @@ export function plan(input: PlanInput): PlanResult {
 
   // ---------------------------------------------------------------- rung 4/5
   for (const adapter of ENGINE_ADAPTERS) {
-    const candidate = adapter.canRun({ report, platform: report.platform, environment });
+    const candidate = adapter.canRun({
+      report,
+      platform: report.platform,
+      environment,
+      biosInstalled: input.biosInstalledFor?.has(report.platform?.id ?? '') ?? false,
+    });
     const priority =
       EXECUTION_PRIORITY.find((p) => p.kind === adapter.descriptor.kind)?.priority ?? 99;
     considered.push({

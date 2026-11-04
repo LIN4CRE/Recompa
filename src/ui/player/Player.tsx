@@ -29,6 +29,7 @@ import { listStates, putState, deleteState } from '@/db/database';
 import { bytes, CompatBadge, MethodBadge, Spinner } from '../components/primitives';
 import { navigate } from '@/lib/router';
 import { runVerification } from '@/core/verification';
+import { platformNeedsBios, readBiosBytes } from '@/core/bios';
 
 const NES_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'START', 'SELECT'];
 const GBA_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'L', 'R', 'START', 'SELECT'];
@@ -104,6 +105,19 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       return;
     }
     const sram = await loadSram(game.id);
+    // PlayStation (and any future firmware console) cannot boot without its
+    // BIOS. Load it before starting so a missing image fails here with a clear
+    // message instead of producing a black screen inside the emulator.
+    let bios: Uint8Array | null = null;
+    if (platformNeedsBios(game.platformId as never)) {
+      bios = await readBiosBytes(game.platformId as never);
+      if (!bios) {
+        setError(
+          'This console needs its BIOS to run. Add your own dump in Settings → Firmware (512 KiB, e.g. scph5501.bin), then press play again.',
+        );
+        return;
+      }
+    }
     sessionStartRef.current = Date.now();
     await emulator.start({
       engineId: engineId as string,
@@ -111,6 +125,7 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       fileName: game.title.replace(/[^\w.\- ]+/g, '_') + extensionFor(game.platformId),
       canvas: canvasRef.current!,
       savedSram: sram,
+      bios,
       audio: audioOn,
       volume: settings.volume,
       onSram: (sramBytes) => void saveSram(game.id, engineId as string, sramBytes),

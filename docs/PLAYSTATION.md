@@ -66,11 +66,25 @@ which games work.
 
 - Recommended dumps: `scph5500` (Japan), `scph5501` (North America),
   `scph5502` (Europe), 512 KiB each.
-- The requirement appears in the analysis report as a dependency and, until it
-  is satisfied, as a **blocker** on the engine — so the UI asks for it instead
-  of failing opaquely at boot.
-- When supplied, it is handed to the core as a blob URL (`EJS_biosUrl`). It
-  never leaves the browser.
+- **Installing it:** Settings → **Firmware** → *Add BIOS file*. The image is
+  validated (exactly 512 KiB), hashed, and stored in the `bios` object store of
+  this browser's IndexedDB. Nothing is uploaded.
+- **Before that:** the engine shows a blocker, so the game page asks for the
+  file instead of failing opaquely at boot.
+- **At launch:** `Player.tsx` reads the stored image and passes it through
+  `useEmulator` to the adapter, which hands it to the core as a blob URL
+  (`EJS_biosUrl`). It never leaves the browser.
+- **What is *not* verified:** the image contents cannot be authenticated
+  offline. Recompa checks the size and reports the bytes it received; it does
+  not claim to identify the exact revision or that a given disc will boot. A
+  correct filename is a hint, never proof.
+
+> **Fixed in this release:** earlier versions surfaced the BIOS dependency but
+> never let anyone satisfy it — nothing populated `suppliedBy`, so
+> `EmulatorJsPsxAdapter.canRun()` reported *BIOS required* forever and **no
+> PlayStation game could start**. Firmware installation now feeds the engine
+> plan directly, and `tests/unit/bios-folderscan.test.ts` locks the behaviour
+> in.
 
 Dump your own console's BIOS. Downloading one is copyright infringement in most
 jurisdictions and Recompa cannot help with it.

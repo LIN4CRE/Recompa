@@ -172,6 +172,8 @@ export interface AnalysisReport {
     multiTrack: boolean;
     trackCount: number;
   };
+  /** Folder (relative to a scanned root) this game was found in, if any. */
+  folder?: string;
 }
 
 export interface ArchiveEntry {
@@ -367,6 +369,12 @@ export interface EngineCandidateInput {
   platform: Platform | null;
   /** Feature flags discovered at runtime. */
   environment: RuntimeEnvironment;
+  /**
+   * Whether the platform's firmware requirement is already satisfied on this
+   * device. Resolved asynchronously by the caller (IndexedDB read) because
+   * `canRun` is synchronous and must stay allocation-free.
+   */
+  biosInstalled?: boolean;
 }
 
 export interface EngineCandidate {
@@ -491,6 +499,33 @@ export interface StoredPayload {
   bytes: Blob;
   size: number;
   sha256: string;
+}
+
+/**
+ * A user-supplied firmware image (e.g. a PlayStation BIOS dump).
+ *
+ * Recompa never bundles, downloads or substitutes these: the user must own the
+ * hardware. They are stored locally in IndexedDB and never leave the device.
+ */
+export interface BiosRecord {
+  /** Stable id: `${platformId}:${kind}` — one image per console. */
+  id: string;
+  platformId: PlatformId;
+  /** Human label, e.g. "Sony PlayStation BIOS". */
+  label: string;
+  /** Original file name as supplied by the user. */
+  fileName: string;
+  size: number;
+  sha256: string;
+  /** Bytes, held as a Blob so large images are not kept as live arrays. */
+  bytes: Blob;
+  addedAt: number;
+  /** What we could prove about it at import time. */
+  validation: {
+    sizeAccepted: boolean;
+    /** Notes shown in the UI — e.g. which SCPH model this size usually is. */
+    notes: string[];
+  };
 }
 
 export interface GameRecord {

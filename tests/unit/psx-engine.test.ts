@@ -129,17 +129,20 @@ describe('PlayStation engine pre-flight', () => {
     const report = await analyse('game.bin', raw);
     const candidate = EmulatorJsPsxAdapter.canRun({ report, platform: report.platform, environment: env() });
     expect(candidate.runnable).toBe(false);
-    expect(candidate.blockers.join(' ')).toMatch(/BIOS required/i);
+    expect(candidate.blockers.join(' ')).toMatch(/BIOS not installed/i);
   });
 
   it('becomes runnable once a BIOS dependency is satisfied', async () => {
     const report = await analyse('game.bin', raw);
-    // Simulate the user attaching their own BIOS dump.
-    const bios = report.dependencies.find((d) => /bios/i.test(d.name));
-    expect(bios).toBeDefined();
-    bios!.suppliedBy = 'scph5501.bin';
-
-    const candidate = EmulatorJsPsxAdapter.canRun({ report, platform: report.platform, environment: env() });
+    // Firmware state comes from the firmware store, not from mutating the
+    // report: nothing in the app ever set `suppliedBy`, which is precisely why
+    // PlayStation could never launch before this was fixed.
+    const candidate = EmulatorJsPsxAdapter.canRun({
+      report,
+      platform: report.platform,
+      environment: env(),
+      biosInstalled: true,
+    });
     expect(candidate.blockers).toHaveLength(0);
     expect(candidate.runnable).toBe(true);
   });
@@ -196,11 +199,11 @@ describe('PlayStation engine pre-flight', () => {
 
   it('notes mobile frame-rate risk without blocking', async () => {
     const report = await analyse('game.bin', raw);
-    report.dependencies.find((d) => /bios/i.test(d.name))!.suppliedBy = 'scph5501.bin';
     const candidate = EmulatorJsPsxAdapter.canRun({
       report,
       platform: report.platform,
       environment: env({ userAgentClass: 'mobile' }),
+      biosInstalled: true,
     });
     expect(candidate.runnable).toBe(true);
     expect(candidate.notes.join(' ')).toMatch(/frame-rate/i);
