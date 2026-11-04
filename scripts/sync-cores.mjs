@@ -8,7 +8,7 @@
  *
  * Run automatically by `postinstall`; also exposed as `npm run sync:cores`.
  */
-import { mkdir, copyFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, copyFile, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -46,8 +46,24 @@ for (const [from, to] of jobs) {
   console.log(`✓ ${to} (${(size / 1024 / 1024).toFixed(2)} MiB)`);
   copied++;
 }
-await writeFile(
-  path.join('public/cores/mgba', 'LICENSES.json'),
-  JSON.stringify({ generatedAt: new Date().toISOString(), packages: licenses }, null, 2),
-);
+// The attribution file is committed, and `postinstall` runs on every install —
+// including CI's `npm ci`. Stamping the current time on each run would make the
+// working tree dirty for every contributor and every build. Only bump the
+// timestamp when the licence content itself actually changes.
+const licensesFile = path.join('public/cores/mgba', 'LICENSES.json');
+const nextLicenses = { packages: licenses };
+const previous = await readFile(licensesFile, 'utf8')
+  .then((t) => JSON.parse(t))
+  .catch(() => null);
+const unchanged =
+  previous && JSON.stringify({ packages: previous.packages }) === JSON.stringify(nextLicenses);
+if (unchanged) {
+  console.log('sync-cores: LICENSES.json unchanged.');
+} else {
+  await writeFile(
+    licensesFile,
+    JSON.stringify({ generatedAt: new Date().toISOString(), ...nextLicenses }, null, 2),
+  );
+  console.log('sync-cores: LICENSES.json updated.');
+}
 console.log(`sync-cores: ${copied} file(s) copied.`);
