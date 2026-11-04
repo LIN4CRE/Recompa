@@ -10,7 +10,7 @@
 | Item | Detail |
 | --- | --- |
 | Type | Static web application (client-side only) + optional local Node service |
-| Stack | React 19, TypeScript 5.9, Vite 8, Tailwind 4, zustand 5, IndexedDB (idb), Vitest 5, Playwright |
+| Stack | React 19, TypeScript 7.0, Vite 8, Tailwind 4, zustand 5, IndexedDB (idb), Vitest 5, Playwright |
 | Execution cores | jsnes 2.1.0 (Apache-2.0), @thenick775/mgba-wasm 2.6.0 (MPL-2.0) |
 | Data | No-Intro DAT fingerprints via libretro-database (CC-BY-SA-4.0), 31,655 entries |
 | Original condition | Empty repository (single commit: `Initial commit`, README with one line) |
