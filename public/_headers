@@ -1,4 +1,12 @@
 # Netlify / Cloudflare Pages header configuration.
+#
+# NOTE: this deployment targets Vercel, which IGNORES this file. The
+# authoritative headers live in vercel.json; this copy exists for other static
+# hosts and is kept in sync by tests/unit/security-headers.test.ts.
+#
+# 'unsafe-eval' is required: EmulatorJS ships Emscripten's extractzip.js, which
+# calls eval(), and Recompa hands multi-track PlayStation discs to the core as a
+# ZIP. See docs/SECURITY.md.
 # Cross-origin isolation is required for SharedArrayBuffer (audio worklet ring
 # buffer + any future threaded cores).
 /*
@@ -8,7 +16,7 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:7333 http://localhost:7333; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' blob: http://127.0.0.1:7333 http://localhost:7333; worker-src 'self' blob: data:; child-src 'self' blob:; frame-src 'self' blob: about:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
 
 # Long-lived immutable assets produced by Vite (content-hashed).
 /assets/*
