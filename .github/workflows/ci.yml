@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --if-present || npx tsc -p tsconfig.app.json --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build artefact serves the expected files
+        run: |
+          node -e "
+          const fs = require('node:fs');
+          const need = ['dist/index.html', 'dist/_headers', 'dist/worklets/audio-ring.js'];
+          for (const f of need) if (!fs.existsSync(f)) { console.error('missing', f); process.exit(1); }
+          const wasm = fs.readdirSync('dist/assets').filter((f) => f.endsWith('.wasm'));
+          if (wasm.length !== 1) { console.error('expected exactly one wasm asset, found', wasm.length); process.exit(1); }
+          console.log('artefact ok:', wasm[0]);
+          "
+
+      - name: Upload build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recompa-dist
+          path: dist
+          retention-days: 7
+
+  e2e:
+    name: End-to-end (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        run: npm run test:e2e
+        env:
+          CI: '1'
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

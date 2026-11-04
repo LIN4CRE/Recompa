@@ -1,0 +1,20 @@
+node_modules
+dist
+dist-ssr
+coverage
+.vite
+*.local
+.DS_Store
+npm-debug.log*
+.env
+.env.*
+!.env.example
+
+# Generated / fetched third-party runtime payloads (see scripts/fetch-*.mjs)
+public/cores/emulatorjs/
+public/cores/emulatorjs-installed.json
+public/test-roms/
+
+# Analyzer service artefacts
+server/model-cache/
+*.log

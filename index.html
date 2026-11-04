@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Recompa — ROM analysis, recompilation &amp; instant browser play</title>
+    <meta
+      name="description"
+      content="Local-first platform that identifies game ROMs, audits every legitimate recompilation and emulation route, and runs the best available option directly in your browser."
+    />
+    <meta name="theme-color" content="#070a0e" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:title" content="Recompa — instant browser gaming, chosen by real analysis" />
+    <meta
+      property="og:description"
+      content="Upload a legally obtained ROM. Recompa identifies the platform, verifies checksums, audits recompilers and emulator cores, then runs the fastest available path in-browser."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      Recompa requires JavaScript: all ROM analysis and emulation runs locally in your browser.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

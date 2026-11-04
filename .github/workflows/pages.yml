@@ -1,0 +1,63 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages needs exactly these two permissions; everything else stays read-only.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deployments at once.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The fingerprint catalogue is generated data (~4.1 MB), not committed, so
+      # the deployment builds it. A token raises the GitHub API rate limit; the
+      # workflow token is read-only, which is all the blob API needs.
+      - name: Build fingerprint catalogue
+        run: npm run fetch:dat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build site
+        run: npm run build
+        env:
+          # GitHub Pages serves from /<repo>/, so emit relative asset URLs.
+          BASE_PATH: './'
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

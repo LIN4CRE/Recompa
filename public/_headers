@@ -1,0 +1,21 @@
+# Netlify / Cloudflare Pages header configuration.
+# Cross-origin isolation is required for SharedArrayBuffer (audio worklet ring
+# buffer + any future threaded cores).
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:7333 http://localhost:7333; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
+
+# Long-lived immutable assets produced by Vite (content-hashed).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/cores/*
+  Cache-Control: public, max-age=604800
+
+/data/catalogue/*
+  Cache-Control: public, max-age=86400
