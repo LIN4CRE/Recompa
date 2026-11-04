@@ -161,6 +161,17 @@ export interface AnalysisReport {
   facts: Array<{ label: string; value: string }>;
   /** Zip member info when the upload was an archive. */
   archive?: { entries: ArchiveEntry[]; selectedEntry: string | null };
+  /**
+   * Set when the upload was a disc set (a cue sheet plus its tracks, or a
+   * multi-disc playlist). Records which files belonged together so the library
+   * can show the real disc rather than one track of it.
+   */
+  discSet?: {
+    entry: string;
+    files: string[];
+    multiTrack: boolean;
+    trackCount: number;
+  };
 }
 
 export interface ArchiveEntry {

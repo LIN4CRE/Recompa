@@ -228,6 +228,43 @@ export function useEmulator(): EmulatorHandle & { start: (args: StartArgs) => Pr
 }
 
 export function mapButton(engineId: string, button: LogicalButton): string | null {
+  if (engineId === 'emulatorjs-psx') {
+    // EmulatorJS owns input inside its own frame; these names are the ones its
+    // PS1 core listens for, kept here so a future direct-input path and the
+    // on-screen hints stay consistent.
+    switch (button) {
+      case 'A': // cross
+        return 'cross';
+      case 'B': // circle
+        return 'circle';
+      case 'X': // triangle
+        return 'triangle';
+      case 'Y': // square
+        return 'square';
+      case 'L':
+        return 'l1';
+      case 'R':
+        return 'r1';
+      case 'L2':
+        return 'l2';
+      case 'R2':
+        return 'r2';
+      case 'START':
+        return 'start';
+      case 'SELECT':
+        return 'select';
+      case 'UP':
+        return 'up';
+      case 'DOWN':
+        return 'down';
+      case 'LEFT':
+        return 'left';
+      case 'RIGHT':
+        return 'right';
+      default:
+        return null;
+    }
+  }
   if (engineId === 'mgba-wasm') {
     switch (button) {
       case 'A':

@@ -32,6 +32,27 @@ import { runVerification } from '@/core/verification';
 
 const NES_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'START', 'SELECT'];
 const GBA_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'L', 'R', 'START', 'SELECT'];
+/**
+ * PlayStation pad. EmulatorJS draws and handles its own on-screen pad inside
+ * the emulator frame, so these are the logical buttons Recompa maps onto
+ * keyboard/gamepad when it owns input; the frame keeps focus for the core.
+ */
+const PSX_BUTTONS: LogicalButton[] = [
+  'UP',
+  'DOWN',
+  'LEFT',
+  'RIGHT',
+  'A',
+  'B',
+  'X',
+  'Y',
+  'L',
+  'R',
+  'L2',
+  'R2',
+  'START',
+  'SELECT',
+];
 
 export function Player({ game, report }: { game: GameRecord; report: AnalysisReport }) {
   const settings = useSettings((s) => s.settings);
@@ -60,11 +81,14 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
   const [audioOn, setAudioOn] = useState(settings.audioEnabled);
   const [speed, setSpeed] = useState(1);
   const [verification, setVerification] = useState<{ running: boolean; summary?: string }>({ running: false });
-  const engineId = game.engineId ?? report.platform?.id === 'nes' ? 'jsnes' : 'mgba-wasm';
+  // Precedence matters here: `a ?? b ? x : y` parses as `(a ?? b) ? x : y`,
+  // so the previous form sent *every* game that had an engineId to jsnes.
+  const engineId = game.engineId ?? (report.platform?.id === 'nes' ? 'jsnes' : 'mgba-wasm');
 
   const buttons = useMemo(() => {
     if (game.platformId === 'nes') return NES_BUTTONS;
     if (game.platformId === 'gba' || game.platformId === 'gb' || game.platformId === 'gbc') return GBA_BUTTONS;
+    if (game.platformId === 'psx') return PSX_BUTTONS;
     return NES_BUTTONS;
   }, [game.platformId]);
 
