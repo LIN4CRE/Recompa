@@ -1,5 +1,10 @@
 # Deployment
 
+**Current production deployment: <https://recompa.vercel.app>** — Vercel project `recompa`, connected
+to `LIN4CRE/Recompa`, production branch `main`, build `npm ci` → `npm run build`, output `dist/`.
+Verified live: app renders, `/library` deep link rewrites, catalogue JSON serves, and the page reports
+`crossOriginIsolated === true`.
+
 Recompa's client is a static bundle. Nothing is required at runtime except a web server that serves
 files and — ideally — sets two headers.
 
@@ -7,7 +12,7 @@ files and — ideally — sets two headers.
 
 ```bash
 npm ci
-npm run fetch:dat      # bakes 31,655 fingerprints into dist/data/catalogue (~4.1 MB)
+npm run fetch:dat      # regenerates the 31,655-fingerprint catalogue; already committed, so optional
 npm run build          # → dist/
 ```
 
@@ -49,7 +54,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval
 | --- | --- | --- |
 | Netlify | `public/_headers` | Copied into `dist/` by Vite. Set build command `npm run build`, publish directory `dist`. |
 | Cloudflare Pages | `public/_headers` | Same file; Cloudflare honours the subset of syntax used here. |
-| Vercel | `vercel.json` | Headers + SPA rewrite. Framework preset: Vite. |
+| Vercel | `vercel.json` | **In use for production.** Headers + SPA rewrite. Framework preset: Vite, install `npm ci`, output `dist`. |
 | GitHub Pages | `.github/workflows/pages.yml` | Cannot set custom headers, so isolation is off and audio uses the fallback path. |
 | Any static host (nginx/Caddy/S3+CDN) | manual | Add the headers above; serve `index.html` for unknown paths (hash routing means this is rarely needed). |
 

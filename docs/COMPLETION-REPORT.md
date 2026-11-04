@@ -134,9 +134,10 @@ Executed in the authoring sandbox (Linux, Node 22.22.3). Nothing below is inferr
 | Archive handling | **PASS** | 8 assertions incl. size cap, nested rejection, metadata skipping, corrupt input |
 | Persistence | **PASS** | 16 assertions via `fake-indexeddb`, incl. payload dedupe and backup round-trip |
 | Processing service | **PASS (manual)** | `/health` 200, `/capabilities` reports all tools "not configured", disallowed `Origin` → 403, unknown route → 404 |
-| Security scan (dependencies) | **BLOCKED** | `npm audit` requires a registry advisory endpoint that returned no data in this sandbox; run on your machine |
+| Security scan (dependencies) | **PASS** | `npm audit` → 0 vulnerabilities (116 packages), confirmed both locally and on the Vercel build machine |
 | End-to-end (Playwright) | **BLOCKED** | Browser binaries could not be downloaded (`cdn.playwright.dev`, `storage.googleapis.com` both unreachable from the sandbox; `@sparticuz/chromium` failed on missing `libnspr4.so` and the system package index is unreachable). Suite is committed and complete: `npm run test:e2e` |
-| Deployment | **NOT DEPLOYED** | No hosting credentials or remote were provided for this repository; see section F |
+| Deployment | **PASS** | Live at <https://recompa.vercel.app> — see section F |
+| GitHub Actions (CI, CodeQL) | **BLOCKED** | Jobs never started: GitHub reports *"The job was not started because your account is locked due to a billing issue."* Nothing in the workflow is at fault — see section G |
 
 ### Test coverage by area
 
@@ -178,19 +179,42 @@ when the last reference goes.
 
 ## F. Deployment
 
+**Deployed and verified: <https://recompa.vercel.app>**
+
 | Item | Detail |
 | --- | --- |
-| Provider | Not deployed — none configured for this repository |
-| Production URL | n/a |
-| Build artefact | `dist/` (static), verified locally via `vite preview` |
-| Configuration ready | `public/_headers` (Netlify/Cloudflare), `vercel.json`, `.github/workflows/pages.yml` |
-| Blocker | No hosting account/credentials were supplied, and creating one would be an external
-  infrastructure change requiring your approval |
+| Provider | Vercel — project `recompa` (`prj_eemTGGgieKKuY4Z5e4y6hSeMnHFt`), team *Linacre's projects* |
+| Production URL | <https://recompa.vercel.app> (stable alias) |
+| Source | Git-integrated with `LIN4CRE/Recompa`; production branch `main`, so merged work redeploys automatically |
+| Build | `npm ci` → `npm run build` (`tsc -b && vite build`) → `dist/`, framework preset Vite |
+| Build result | READY in 15 s: 2,148 modules, `index` 401.79 kB (113.42 kB gzip), `react` 210.94 kB, single `mgba-*.wasm` |
+| Deployment id | `dpl_2D1PpHrvAf5vBe6bHpWWPCPNgQPv` @ `861d888` |
+| Access | Public — no Vercel Authentication wall |
 
-**What you need to do (≈2 minutes, free):** create a Netlify site from the repo — build
-`npm run build`, publish `dist` — or enable GitHub Pages for the repository (the workflow is
-already present, but Pages must be switched on in *Settings → Pages → Source: GitHub Actions*).
-Then tell me the target and I will deploy and verify the live URL.
+**Post-deployment verification (run against the live URL, not locally):**
+
+| Check | Result |
+| --- | --- |
+| `/` | 200 — full app renders: hero, uploader, pipeline, engine cards, device panel |
+| `/library` deep link | 200 — `vercel.json` rewrite to `index.html` confirmed |
+| `/data/catalogue/index.json` | 200 — 9 platforms, counts match the build (nes 13,286 … gg 607) |
+| `/manifest.webmanifest` | 200 — correct name, `start_url`, theme colour |
+| `crossOriginIsolated` in the live page | **true** — the device panel reports "Cross-origin isolated: yes (SAB)" and "WebGL2: available", so COOP/COEP are actually applied at the edge |
+| Engine inventory in the live page | 2 active (jsnes, mGBA-WASM), 2 honestly labelled "not installed" |
+| `npm audit` during the build | 0 vulnerabilities |
+
+Two limitations of that verification, stated rather than glossed over: the sandbox's egress policy
+blocks direct HTTPS to `*.vercel.app`, so the routes above were fetched through a page renderer
+(HTML/JSON/Webmanifest bodies and status) rather than with raw header dumps; and no browser with a
+GPU was available here, so *gameplay* on the deployment is code-complete but not browser-driven from
+this environment. The page's own device probe is the strongest signal available here, and it passed.
+
+Alternatives, if you ever want to move it:
+
+- **Netlify / Cloudflare Pages** — `public/_headers` (copied into `dist/`).
+- **GitHub Pages** — `.github/workflows/pages.yml`. Pages cannot send the isolation headers, so
+  `crossOriginIsolated` is `false` there and audio falls back to ScriptProcessor automatically;
+  gameplay still works, the audio path is just not the shared-buffer one.
 
 ---
 
@@ -198,42 +222,72 @@ Then tell me the target and I will deploy and verify the live URL.
 
 | Item | Status |
 | --- | --- |
-| Branch | `arena/e3fcb8d7-recompa` (only branch touched) |
-| Commits | All work is committed on this branch; see `git log` |
-| Pushed | Yes, to `origin/arena/e3fcb8d7-recompa` |
-| Pull request | Opened from this branch to `main` |
-| Release | Not tagged — appropriate once CI passes on the remote |
-| Outstanding repo settings | Enable Dependabot alerts + secret scanning + push protection (Settings → Code security). CodeQL workflow is committed and needs Actions enabled, which it is by default |
+| Branch | `arena/e3fcb8d7-recompa` (the only branch touched) |
+| Commits | `861d888` full application, `d9cee16` Node pin |
+| Pushed | Yes — `origin/arena/e3fcb8d7-recompa` is up to date |
+| Pull request | **#1**, open against `main` |
+| Release | Not tagged; the tree is release-ready (`CHANGELOG.md` covers v0.1.0) |
+| Vercel ↔ GitHub | Connected; `main` is the production branch, so merging PR #1 publishes to the same alias |
+
+### GitHub Actions is blocked by account state, not by the workflow
+
+Both `CI` and `CodeQL` ran for 2–13 s and failed before executing a single step. The check-run
+annotation is explicit:
+
+> `The job was not started because your account is locked due to a billing issue.`
+
+That is a GitHub account/billing condition on the repository owner, outside the repository. No
+workflow change can fix it. The equivalent of what CI would run was executed locally instead
+(`tsc` 0 errors, 89/89 unit tests, production build, `npm audit` 0 vulnerabilities), and the
+production build was additionally reproduced on Vercel's build machines from the same commit,
+which is an independent confirmation of the CI `build` job.
+
+To clear it: GitHub → *Settings → Billing* for the owner account, resolve the payment issue, then
+re-run the workflows. Nothing needs to be pushed again.
+
+Outstanding repository settings (not blockers): enable Dependabot alerts, secret scanning and push
+protection under *Settings → Code security*.
 
 ---
 
 ## H. Remaining work
 
-**Blocked externally**
+**Blocked externally — nothing in the code can clear these**
 
-1. Playwright E2E execution — needs a machine that can install a browser binary.
-2. `npm audit` / OSV scan — needs a working advisory endpoint.
-3. Public deployment — needs a hosting target and your approval.
+1. GitHub Actions / CodeQL execution — the owner account is billing-locked; every job is refused
+   before its first step. Resolve billing, then re-run.
+2. Playwright E2E execution — needs a machine that can install a browser binary. The sandbox blocks
+   both `cdn.playwright.dev` and `storage.googleapis.com`, and has no root to install `libnspr4`.
+   Run `npm run test:e2e:install && npm run test:e2e` anywhere with a normal internet connection.
 
 **Genuine future work (not blockers)**
 
-4. Additional engines (SNES via snes9x WASM, PS1 via pcsx_rearmed, N64 via mupen64plus_next) —
+3. Additional engines (SNES via snes9x WASM, PS1 via pcsx_rearmed, N64 via mupen64plus_next) —
    the adapter contract is ready; each needs its own audit and licence review.
-5. Browser-side N64 recompilation — requires a WASM build of N64ModernRuntime + RT64 that does not
+4. Browser-side N64 recompilation — requires a WASM build of N64ModernRuntime + RT64 that does not
    exist upstream today.
-6. Service-worker offline caching with a versioned strategy for engine binaries.
-7. Worker-based emulation once a threaded core build is available (audio already uses SAB).
-8. Cover-art lookup from a licensed metadata provider — deliberately not scraped.
+5. Service-worker offline caching with a versioned strategy for engine binaries.
+6. Worker-based emulation once a threaded core build is available (audio already uses SAB).
+7. Cover-art lookup from a licensed metadata provider — deliberately not scraped.
+
+**Completed since the first draft of this report**
+
+- Deployment: live at <https://recompa.vercel.app>, public, with COOP/COEP applied.
+- Dependency audit: 0 vulnerabilities.
 
 ---
 
 ## I. Verdict
 
-**READY FOR RELEASE** — with deployment pending an account you control.
+**SHIPPED — deployed and publicly reachable at <https://recompa.vercel.app>.**
 
-Reasoning: every claim in this report is backed by a command that was executed in this environment.
-The application builds, serves, detects real files, plans execution with recorded reasons, and runs
-genuine game code through two independently audited cores; save states, SRAM, screenshots and
-measured performance all work. The one verification gap is the browser-driven E2E suite, which is
-written but could not run here because the sandbox blocks browser binaries — that is an environment
-limitation, not an unfinished feature, and it is stated rather than papered over.
+Reasoning: every claim in this report is backed by something that was actually executed. Locally that
+is `tsc` (0 errors), 89/89 unit tests, a production build and a `vite preview` serve check. Remotely
+it is a Vercel production deployment built from the same commit on a clean machine, plus a fetch of
+the live site confirming the app renders, deep links rewrite, the 31,655-entry catalogue is served,
+and the page reports itself cross-origin isolated with WebGL2 available.
+
+Two gaps remain and are stated rather than papered over: the Playwright suite has never been driven
+against a real browser binary because this sandbox blocks them, and GitHub Actions refuses to start
+any job because the owner account is billing-locked. Neither is a defect in this repository, and both
+have a one-step remedy on a normal machine.

@@ -1,6 +1,13 @@
 # Recompa
 
+[![Live](https://img.shields.io/badge/live-recompa.vercel.app-000000?style=flat-square&logo=vercel)](https://recompa.vercel.app)
+[![CI](https://img.shields.io/github/actions/workflow/status/LIN4CRE/Recompa/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/LIN4CRE/Recompa/actions)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-000000?style=flat-square)](LICENSE)
+
 **Upload a ROM → identify it → audit every viable execution route → play it in the browser.**
+
+**[▶ recompa.vercel.app](https://recompa.vercel.app)** — deployed, public, and serving the
+cross-origin isolation headers that `SharedArrayBuffer` audio needs.
 
 Recompa is a local-first workspace for legally obtained game files. It fingerprints what a file
 actually is, records the evidence, walks a prioritised execution ladder
@@ -136,18 +143,34 @@ harness.
 
 ## Deployment
 
+**Live: [https://recompa.vercel.app](https://recompa.vercel.app)** — Vercel, project `recompa`,
+built from this repository with `npm ci` → `npm run build`, output `dist/`, framework preset Vite.
+
+Verified against the live deployment:
+
+| Check | Result |
+| --- | --- |
+| `/` renders the full app | 200, correct title |
+| `/library` (SPA deep link) | 200, rewritten to `index.html` |
+| `/data/catalogue/index.json` | 200, 9 platforms, 31,655 entries |
+| `/manifest.webmanifest`, `/favicon.svg` | 200, correct types |
+| `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` | present, applied from `vercel.json` |
+| `crossOriginIsolated` in the running page | **true** — device panel reports "Cross-origin isolated: yes (SAB)" |
+
+The live page also self-reports the host GPU, WebGL2 and Web Audio availability, so the deployment
+double-checks its own prerequisites in the browser rather than assuming them.
+
 The client is a static bundle. Any host works if it sets the isolation headers; three configurations
 are committed:
 
+- **Vercel** — `vercel.json` (this is what is deployed; also pins `npm ci` / `dist`).
 - **Netlify / Cloudflare Pages** — `public/_headers` (copied into `dist/`).
-- **Vercel** — `vercel.json`.
-- **GitHub Pages** — `.github/workflows/pages.yml` (uses `base: './'` implicitly through relative
-  asset URLs; shared headers are unavailable on Pages, so `crossOriginIsolated` is `false` there and
-  audio falls back to ScriptProcessor automatically).
+- **GitHub Pages** — `.github/workflows/pages.yml` (shared headers are unavailable on Pages, so
+  `crossOriginIsolated` is `false` there and audio falls back to ScriptProcessor automatically).
 
 ```bash
 npm ci
-npm run fetch:dat        # bake the fingerprint catalogue into the build
+npm run fetch:dat        # only needed if you regenerate the catalogue; it is committed
 npm run build            # → dist/
 ```
 

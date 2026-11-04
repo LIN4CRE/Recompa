@@ -6,7 +6,18 @@ All notable changes to Recompa are documented here. The format follows
 
 ## [0.1.0] — 2026-11-04
 
-First working release. Scope was deliberately limited to what could be verified end-to-end.
+First working release, and the first one that is **live**: <https://recompa.vercel.app>.
+
+### Deployed
+
+- Production deployment on Vercel (project `recompa`), built from this repository with
+  `npm ci` → `npm run build`, output `dist/`.
+- `vercel.json` serves COOP/COEP/CORP, immutable cache headers for `/assets/*`, and the SPA rewrite,
+  so the live page reports `crossOriginIsolated === true` and audio gets `SharedArrayBuffer`.
+- Verified live: app renders, `/library` deep link rewrites, `/data/catalogue/index.json` serves
+  9 platforms / 31,655 entries, `/manifest.webmanifest` correct.
+
+Scope was deliberately limited to what could be verified end-to-end.
 
 ### Added
 
