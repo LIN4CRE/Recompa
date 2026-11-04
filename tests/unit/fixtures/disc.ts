@@ -49,12 +49,6 @@ function rawMode2Sector(lba: number, data: Uint8Array): Uint8Array {
 
 const LICENCE_TEXT = '          Licensed  by          Sony Computer Entertainment Inc.';
 
-function licenceSector(lba: number): Uint8Array {
-  const data = new Uint8Array(DATA_SECTOR);
-  data.set(new TextEncoder().encode(LICENCE_TEXT).subarray(0, DATA_SECTOR), 0);
-  return rawMode2Sector(lba, data);
-}
-
 function directoryRecord(name: string, lba: number, size: number, isDir: boolean): Uint8Array {
   const n = new TextEncoder().encode(name);
   const rec = new Uint8Array(33 + n.length + (n.length % 2 === 0 ? 1 : 0));
@@ -94,8 +88,8 @@ function directoryRecord(name: string, lba: number, size: number, isDir: boolean
   return rec;
 }
 
-function sectorData(data: Uint8Array): Uint8Array {
-  const out = new Uint8Array(DATA_SECTOR);
+function sectorData(data: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(new ArrayBuffer(DATA_SECTOR));
   out.set(data.subarray(0, DATA_SECTOR), 0);
   return out;
 }
@@ -149,12 +143,12 @@ export function buildPsxDisc(options: DiscOptions = {}): Uint8Array {
 
   const sectorsOut: Uint8Array[] = [];
   for (let lba = 0; lba < sectors; lba++) {
-    let data = new Uint8Array(DATA_SECTOR);
+    let data: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(DATA_SECTOR));
     if (lba < 16) {
       if (psxLicence && lba === 4) data = sectorData(new TextEncoder().encode(LICENCE_TEXT));
     } else if (lba === 16) data = pvd;
     else if (lba === 17) {
-      data = new Uint8Array(DATA_SECTOR);
+      data = new Uint8Array(new ArrayBuffer(DATA_SECTOR));
       data[0] = 0xff; // Volume descriptor set terminator
       data.set(D('CD001'), 1);
       data[6] = 0x01;

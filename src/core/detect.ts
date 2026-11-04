@@ -998,9 +998,6 @@ const PVD_SECTOR = 16;
 const ISO_PVD_TYPE = 0x01;
 const ISO_MAGIC = 'CD001';
 
-/** The PlayStation licence string sits at the start of sector 4's user data. */
-const PSX_LICENCE = 'Licensed  by          Sony Computer Entertainment';
-
 function pvdOffset(probe: SectorProbe): number {
   return PVD_SECTOR * probe.sectorSize + probe.payloadOffset;
 }
@@ -1182,7 +1179,10 @@ function detectDisc(r: ByteReader, ext: string): DetectionResult | null {
     const platformId = looksDvd ? null : looksCd ? 'psx' : null;
     return {
       platformId,
-      platformConfidence: 'possible',
+      // CHD metadata names the *original media*, not the console. CD-ROM hints
+      // at PSX, but Sega CD/Saturn/PC-FX are CD-ROM too, so the platform guess
+      // stays explicitly unknown. The error below explains the real blocker.
+      platformConfidence: 'unknown',
       format: {
         id: 'chd',
         label: 'MAME CHD compressed disc image',
