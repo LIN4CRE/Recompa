@@ -1,4 +1,4 @@
-import { EMULATORJS_DESCRIPTOR } from './descriptors';
+import { EMULATORJS_DESCRIPTOR, EMULATORJS_PSX_DESCRIPTOR } from './descriptors';
 
 /**
  * Discovers which optional engine payloads exist on this deployment.
@@ -8,8 +8,16 @@ import { EMULATORJS_DESCRIPTOR } from './descriptors';
  * build-time default, not a runtime fact.
  */
 
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
 const PROBES: Array<{ id: string; url: string }> = [
-  { id: EMULATORJS_DESCRIPTOR.id, url: `${import.meta.env.BASE_URL.replace(/\/$/, '')}/cores/emulatorjs/data/loader.js` },
+  { id: EMULATORJS_DESCRIPTOR.id, url: `${base}/cores/emulatorjs/data/loader.js` },
+  // The runtime can be present without any core payload, so the PlayStation
+  // adapter is gated on the core itself, not on loader.js.
+  {
+    id: EMULATORJS_PSX_DESCRIPTOR.id,
+    url: `${base}/cores/emulatorjs/data/cores/pcsx_rearmed-wasm.data`,
+  },
 ];
 
 let cached: { at: number; ids: Set<string> } | null = null;

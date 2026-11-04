@@ -1,6 +1,7 @@
 import type { EngineAdapter } from '@/core/types';
 import { JsnesAdapter } from './nes/adapter';
 import { MgbaAdapter } from './mgba/adapter';
+import { EmulatorJsPsxAdapter } from './psx/adapter';
 
 /**
  * Engine registry.
@@ -8,7 +9,7 @@ import { MgbaAdapter } from './mgba/adapter';
  * Adding a platform means adding an adapter here — nothing in the planner, UI
  * or storage layer knows platform specifics. See docs/ADDING-ENGINES.md.
  */
-export const ENGINE_ADAPTERS: EngineAdapter[] = [JsnesAdapter, MgbaAdapter];
+export const ENGINE_ADAPTERS: EngineAdapter[] = [JsnesAdapter, MgbaAdapter, EmulatorJsPsxAdapter];
 
 export const ADAPTER_BY_ID = new Map(ENGINE_ADAPTERS.map((a) => [a.descriptor.id, a]));
 

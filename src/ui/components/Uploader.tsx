@@ -4,6 +4,8 @@ import { AlertTriangle, Archive, CheckCircle2, FileUp, FolderOpen, Loader2, Shie
 import { useLibrary } from '@/state/library';
 import { analyzeBytes } from '@/core/analyze';
 import { inspectArchive } from '@/lib/zip';
+import { resolveDiscSets, type DroppedFile, type DiscSet } from '@/core/discset';
+import { buildDiscArchive, needsArchive } from '@/engines/psx/discArchive';
 import { formatBytes } from '@/core/binary';
 import type { AnalysisReport, GameRecord, Job } from '@/core/types';
 import { Spinner } from './primitives';
@@ -57,9 +59,140 @@ export function Uploader({
       const collected: UploadResult[] = [];
       const failures: typeof errors = [];
 
+      // Read just enough of each file to understand the set: sheet text for
+      // .cue/.m3u, sizes and names for everything else. Track payloads are
+      // deliberately not loaded here — a 700 MB disc must not be read twice.
+      const described: Array<{ file: File; meta: DroppedFile }> = [];
       for (const file of list) {
+        const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
+        const needsText = ext === 'cue' || ext === 'm3u' || ext === 'ccd' || ext === 'toc';
+        const textContent = needsText
+          ? await file.slice(0, 128 * 1024).text()
+          : undefined;
+        described.push({
+          file,
+          meta: {
+            name: file.name,
+            size: file.size,
+            ext,
+            relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || undefined,
+            textContent,
+          },
+        });
+      }
+
+      // Group into disc sets so a .cue and its .bin tracks become ONE game and
+      // individual tracks never masquerade as separate titles.
+      const sets: DiscSet[] = resolveDiscSets(described.map((d) => d.meta));
+      const byName = new Map(described.map((d) => [d.meta.name.toLowerCase(), d.file]));
+
+      for (const set of sets) {
+        // Standalone non-disc files keep their own path; a set marked
+        // "not-a-disc-set" still goes through analysis so the detector can
+        // report precisely what it is.
+        if (set.status === 'not-a-disc-set') {
+          const file = byName.get(set.entry.toLowerCase());
+          if (file) {
+            await analyseOne(file, 'reading');
+          }
+          continue;
+        }
+
+        if (set.status === 'missing-companion' || set.status === 'invalid-sheet') {
+          failures.push({
+            file: set.entry,
+            message: set.problems[0] ?? 'This disc set is incomplete.',
+            detail: set.members.length > 1 ? `Included: ${set.members.map((m) => m.name).join(', ')}` : undefined,
+          });
+          continue;
+        }
+
         try {
           setPhase('reading');
+          setProgressLabel(`${set.entry} · ${set.members.length} file${set.members.length === 1 ? '' : 's'}`);
+          const members = set.members
+            .map((m) => ({ member: m, file: byName.get(m.name.toLowerCase()) }))
+            .filter((x): x is { member: typeof x.member; file: File } => Boolean(x.file));
+
+          let payload: Uint8Array;
+          let displayName = set.entry;
+          let archiveMeta: UploadResult['archive'] = null;
+
+          if (needsArchive(members.length)) {
+            // Repackage cue + tracks into one zip for the emulator.
+            setPhase('expanding');
+            setProgressLabel(`${set.entry} · packaging ${members.length} files`);
+            const input = [];
+            for (const { member, file } of members) {
+              input.push({ name: member.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+            }
+            const archive = await buildDiscArchive(input, set.entry);
+            payload = new Uint8Array(await archive.blob.arrayBuffer());
+            displayName = `${set.entry.replace(/\.[^.]+$/, '')}.zip`;
+            archiveMeta = { entries: members.length, selected: archive.entry };
+          } else {
+            const file = members[0]!.file;
+            payload = new Uint8Array(await file.arrayBuffer());
+            displayName = set.entry;
+          }
+
+          setPhase('analyzing');
+          setProgressLabel(`${displayName} · checksums`);
+          const report = await analyzeBytes(payload, displayName, {
+            archiveSize: archiveMeta ? payload.length : undefined,
+          });
+          if (archiveMeta) report.archive = { entries: [], selectedEntry: archiveMeta.selected };
+
+          // Preserve the human-facing name and the set detail in the report so
+          // the library shows "Digimon World 3", not "Digimon World 3.zip".
+          if (archiveMeta) {
+            report.identification.title = report.identification.title || set.entry.replace(/\.[^.]+$/, '');
+          }
+          report.discSet = {
+            entry: set.entry,
+            files: set.members.map((m) => m.name),
+            multiTrack: set.multiTrack,
+            trackCount: set.trackCount,
+          };
+
+          setPhase('storing');
+          const { game, job, duplicate } = await addReport(report, payload);
+          collected.push({
+            report,
+            game,
+            job,
+            duplicate,
+            fileName: set.entry,
+            archive: archiveMeta,
+          });
+
+          if (duplicate) {
+            pushToast({
+              kind: 'info',
+              title: 'Already in your library',
+              message: `Identical SHA-256 to "${duplicate.title}". The existing entry was refreshed instead of duplicated.`,
+            });
+          }
+          if (set.notes.length) {
+            pushToast({ kind: 'info', title: set.entry, message: set.notes[0]! });
+          }
+        } catch (error) {
+          failures.push({
+            file: set.entry,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      setPhase(collected.length ? 'done' : 'error');
+      setErrors(failures);
+      setResults(collected);
+      if (collected.length) onComplete?.(collected);
+
+      /** Analyse one standalone file (existing single-file behaviour). */
+      async function analyseOne(file: File, startPhase: Phase) {
+        try {
+          setPhase(startPhase);
           setProgressLabel(`${file.name} · ${formatBytes(file.size)}`);
           const raw = new Uint8Array(await file.arrayBuffer());
 
@@ -67,14 +200,16 @@ export function Uploader({
           let displayName = file.name;
           let archiveMeta: UploadResult['archive'] = null;
           const isZip =
-            /\.zip$/i.test(file.name) || (raw.length > 4 && raw[0] === 0x50 && raw[1] === 0x4b && raw[2] === 0x03 && raw[3] === 0x04);
+            /\.zip$/i.test(file.name) ||
+            (raw.length > 4 && raw[0] === 0x50 && raw[1] === 0x4b && raw[2] === 0x03 && raw[3] === 0x04);
 
           if (isZip) {
             setPhase('expanding');
             const inspection = await inspectArchive(raw);
             archiveMeta = {
               entries: inspection.entries.length,
-              selected: inspection.selectedIndex !== null ? inspection.entries[inspection.selectedIndex]!.name : null,
+              selected:
+                inspection.selectedIndex !== null ? inspection.entries[inspection.selectedIndex]!.name : null,
             };
             if (!inspection.selectedBytes) {
               throw new Error(
@@ -98,17 +233,11 @@ export function Uploader({
           const report = await analyzeBytes(payload, displayName, {
             archiveSize: isZip ? raw.length : undefined,
           });
-          report.archive = archiveMeta
-            ? {
-                entries: [],
-                selectedEntry: archiveMeta.selected,
-              }
-            : undefined;
+          report.archive = archiveMeta ? { entries: [], selectedEntry: archiveMeta.selected } : undefined;
 
           setPhase('storing');
           const { game, job, duplicate } = await addReport(report, payload);
-          const result: UploadResult = { report, game, job, duplicate, fileName: file.name, archive: archiveMeta };
-          collected.push(result);
+          collected.push({ report, game, job, duplicate, fileName: file.name, archive: archiveMeta });
 
           if (duplicate) {
             pushToast({
@@ -118,15 +247,9 @@ export function Uploader({
             });
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          failures.push({ file: file.name, message });
+          failures.push({ file: file.name, message: error instanceof Error ? error.message : String(error) });
         }
       }
-
-      setPhase(collected.length ? 'done' : 'error');
-      setErrors(failures);
-      setResults(collected);
-      if (collected.length) onComplete?.(collected);
     },
     [addReport, onComplete, pushToast],
   );

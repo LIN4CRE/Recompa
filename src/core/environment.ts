@@ -149,6 +149,20 @@ export function enginePrerequisiteBlockers(
       notes.push('Single-core device: jsnes runs on the main thread and may stutter.');
     }
   }
+  if (engineId === 'emulatorjs-psx') {
+    if (!env.webAssembly) {
+      blockers.push('pcsx_rearmed is a WebAssembly build and this browser reports no WebAssembly support.');
+    }
+    if (!env.webgl2) {
+      blockers.push('pcsx_rearmed renders through WebGL2, which this browser does not expose.');
+    }
+    if (!env.indexedDb) {
+      notes.push('IndexedDB is unavailable: memory cards and save states will not persist.');
+    }
+    if (env.userAgentClass === 'mobile' && env.deviceMemoryGb !== null && env.deviceMemoryGb < 4) {
+      notes.push('Low-memory mobile device: a full PlayStation disc image may exceed the available heap.');
+    }
+  }
   return { blockers, notes };
 }
 

@@ -117,6 +117,59 @@ export const EMULATORJS_DESCRIPTOR: EngineDescriptor = {
   ],
 };
 
+/**
+ * PlayStation 1 via EmulatorJS + pcsx_rearmed.
+ *
+ * Extension list is not a guess: it is the `extensions` array from the core's
+ * own `core.json`, extracted from the shipped `pcsx_rearmed-wasm.data`:
+ *   bin, cue, img, mdf, pbp, toc, cbn, m3u, ccd
+ *
+ * Note what is absent — `chd` and `iso` are NOT in that list. CHD therefore
+ * cannot be loaded by this build, and `.iso` support is genuinely untested
+ * here, so neither is advertised.
+ */
+export const EMULATORJS_PSX_DESCRIPTOR: EngineDescriptor = {
+  id: 'emulatorjs-psx',
+  name: 'EmulatorJS + pcsx_rearmed (PlayStation WASM core)',
+  project: 'EmulatorJS / pcsx_rearmed',
+  version: '4.2.3 / core 2.0.2',
+  kind: 'wasm-emulator',
+  licence: 'GPL-3.0 (EmulatorJS) · GPL-2.0 (pcsx_rearmed)',
+  homepage: 'https://github.com/EmulatorJS/EmulatorJS',
+  platforms: ['psx'],
+  accepts: ['bin', 'cue', 'img', 'mdf', 'pbp', 'toc', 'cbn', 'm3u', 'ccd'],
+  needsFirmware: true,
+  supports: {
+    saveStates: true,
+    sramSaves: true,
+    screenshots: true,
+    gamepad: true,
+    touch: true,
+    rewind: true,
+    audio: true,
+    worker: false,
+    gpu: true,
+    wasm: true,
+  },
+  performanceNotes:
+    'pcsx_rearmed is the accuracy-oriented libretro core, compiled to WebAssembly and ' +
+    'rendered through WebGL2. Expect real-time on desktop; on mobile it is frame-rate ' +
+    'dependent and not guaranteed.',
+  assetPath: '/cores/emulatorjs/data',
+  installHint: 'npm run setup:emulatorjs',
+  available: false,
+  unavailableReason:
+    'Runtime payload is not installed in this deployment. Run `npm run setup:emulatorjs` ' +
+    'to unpack the pinned EmulatorJS + pcsx_rearmed build (GPL) into public/cores.',
+  limitations: [
+    'GPL-2.0/GPL-3.0: serving these files makes your deployment a distributor, so you must offer the corresponding source.',
+    'A real PlayStation BIOS is required. Recommended: scph5500 (JP), scph5501 (US) or scph5502 (EU), 512 KiB each. It is never bundled — supply your own lawfully obtained dump.',
+    'CHD is not supported by this core. Convert to BIN/CUE instead.',
+    'Disc images must be supplied with their cue sheet when the disc has more than one track.',
+    'Netplay and cheat files are not wired up in this integration.',
+  ],
+};
+
 export const N64RECOMP_DESCRIPTOR: EngineDescriptor = {
   id: 'n64recomp',
   name: 'N64Recomp (static recompiler, external toolchain)',
@@ -156,5 +209,6 @@ export const ALL_DESCRIPTORS: EngineDescriptor[] = [
   JSNES_DESCRIPTOR,
   MGBA_DESCRIPTOR,
   EMULATORJS_DESCRIPTOR,
+  EMULATORJS_PSX_DESCRIPTOR,
   N64RECOMP_DESCRIPTOR,
 ];
