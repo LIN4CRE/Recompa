@@ -30,7 +30,7 @@ Recompa distributes **no game ROMs, BIOS images, firmware or commercial game ass
 | react | 19.3.1 | MIT | UI rendering |
 | react-dom | 19.3.1 | MIT | DOM renderer for React |
 | tailwindcss | 4.3.4 | MIT | utility CSS framework |
-| typescript | 5.9.3 | Apache-2.0 | type checker and compiler |
+| typescript | 7.0.2 | Apache-2.0 | type checker and compiler |
 | vite | 8.3.5 | MIT | build tool and dev server |
 | vitest | 5.1.0 | MIT | unit test runner |
 | zustand | 5.0.16 | MIT | application state stores |
