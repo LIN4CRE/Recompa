@@ -350,7 +350,21 @@ export function GamePage({ gameId }: { gameId: string }) {
                     <ul className="mt-1.5 space-y-0.5">
                       {candidate.blockers.map((b, i) => (
                         <li key={i} className="flex gap-1.5 font-mono text-[10px] leading-relaxed text-ink-3">
-                          <X className="mt-0.5 size-2.5 shrink-0 text-rose/70" /> {b}
+                          <X className="mt-0.5 size-2.5 shrink-0 text-rose/70" />
+                          <span>
+                            {b}
+                            {/BIOS not installed/i.test(b) && (
+                              <>
+                                {' '}
+                                <button
+                                  className="text-lime underline underline-offset-2 hover:text-lime/80"
+                                  onClick={() => navigate('/settings?tab=firmware')}
+                                >
+                                  Open firmware settings
+                                </button>
+                              </>
+                            )}
+                          </span>
                         </li>
                       ))}
                     </ul>

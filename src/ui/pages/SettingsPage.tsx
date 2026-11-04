@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { useRoute } from '@/lib/router';
 import { useSettings } from '@/state/settings';
 import { useLibrary } from '@/state/library';
 import { DEFAULT_KEYBINDINGS, RESERVED_CODES, type LogicalButton } from '@/engines/input';
@@ -22,8 +23,20 @@ import type { RuntimeEnvironment } from '@/core/types';
 
 type Tab = 'playback' | 'controls' | 'firmware' | 'data' | 'advanced';
 
+const VALID_TABS: Tab[] = ['playback', 'controls', 'firmware', 'data', 'advanced'];
+
 export function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('playback');
+  // Deep links such as /settings?tab=firmware let the game page point straight
+  // at the fix for a "BIOS not installed" blocker instead of describing it.
+  const route = useRoute();
+  const requested = route.query.get('tab') as Tab | null;
+  const [tab, setTab] = useState<Tab>(requested && VALID_TABS.includes(requested) ? requested : 'playback');
+
+  useEffect(() => {
+    if (requested && VALID_TABS.includes(requested) && requested !== tab) setTab(requested);
+    // Only react to genuine URL changes; `tab` is owned by the user otherwise.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
   const { settings, update, reset, resetKeybindings } = useSettings();
   const games = useLibrary((s) => s.games);
   const hydrate = useLibrary((s) => s.hydrate);
