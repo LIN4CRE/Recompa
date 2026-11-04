@@ -8,7 +8,10 @@ somebody watched a real game load and run through that path.
 Nothing in this table is aspirational. If an engine is not installed, the row
 says so.
 
-**Detection coverage is verified separately from playback.** Every platform
+**Detection coverage is verified separately from playback.** See
+[`DETECTION-COVERAGE.md`](./DETECTION-COVERAGE.md) for the per-detector
+contract, confidence caps and known-broken history.
+ Every platform
 listed here has a byte-level detector in `src/core/detect.ts` or
 `src/core/detect-extra.ts`, and each one is exercised by
 `tests/unit/detect-extra.test.ts` against a purpose-built fixture.
