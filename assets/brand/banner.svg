@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="t d">
+  <title id="t">Recompa — ROM analysis and in-browser emulation</title>
+  <desc id="d">Recompa wordmark on a dark background with the tagline: identify, verify and run retro ROMs entirely in your browser. Nineteen platforms have byte-level detectors.</desc>
+
+  <defs>
+    <!-- Brand palette, taken from public/favicon.svg so the banner matches the app. -->
+    <linearGradient id="abyss" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1118"/>
+      <stop offset="0.55" stop-color="#0a0f16"/>
+      <stop offset="1" stop-color="#080c12"/>
+    </linearGradient>
+    <radialGradient id="limeGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d6ff4b" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#d6ff4b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="iceGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6fd3ff" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#6fd3ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Faint technical grid, echoing the app's backdrop. -->
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0v32" fill="none" stroke="#27364a" stroke-width="1" stroke-opacity="0.16"/>
+    </pattern>
+
+    <clipPath id="frame">
+      <rect x="0" y="0" width="1280" height="640" rx="0"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="640" fill="url(#abyss)"/>
+    <rect width="1280" height="640" fill="url(#grid)"/>
+
+    <!-- Ambient glows, kept subtle so the text stays the focus. -->
+    <circle cx="150" cy="120" r="420" fill="url(#limeGlow)"/>
+    <circle cx="1150" cy="560" r="460" fill="url(#iceGlow)"/>
+
+    <!-- Top hairline accent. -->
+    <rect x="0" y="0" width="1280" height="2" fill="#d6ff4b" opacity="0.5"/>
+
+    <!-- Mark: the favicon glyph, scaled up. -->
+    <g transform="translate(84 188) scale(3.1)">
+      <rect width="32" height="32" rx="7" fill="#0c1118"/>
+      <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#27364a"/>
+      <path d="M9 22V10h6.2c2.9 0 4.6 1.4 4.6 3.9 0 1.8-.9 3-2.5 3.6l3 4.5h-3.3l-2.6-4.1h-2.6V22H9Zm2.8-6.4h3.2c1.3 0 2-.6 2-1.7s-.7-1.6-2-1.6h-3.2v3.3Z" fill="#d6ff4b"/>
+      <path d="M23.5 10.5h2.2v11h-2.2z" fill="#6fd3ff" opacity=".85"/>
+    </g>
+
+    <!-- Wordmark. Letter-spacing tightened to read as a logo, not body text. -->
+    <text x="196" y="300"
+          font-family="'Inter','Helvetica Neue',Helvetica,Arial,DejaVu Sans,sans-serif"
+          font-size="104" font-weight="700" letter-spacing="-3" fill="#eaf2ff">Recompa</text>
+
+    <text x="200" y="356"
+          font-family="'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'DejaVu Sans Mono',monospace"
+          font-size="21" letter-spacing="4.5" fill="#6fd3ff" opacity="0.92">ROM ANALYSIS · IN-BROWSER EMULATION</text>
+
+    <text x="200" y="424"
+          font-family="'Inter','Helvetica Neue',Helvetica,Arial,DejaVu Sans,sans-serif"
+          font-size="27" fill="#97a6bb">Identify, verify and run retro ROMs.</text>
+    <text x="200" y="464"
+          font-family="'Inter','Helvetica Neue',Helvetica,Arial,DejaVu Sans,sans-serif"
+          font-size="27" fill="#97a6bb">Nothing leaves your device.</text>
+
+    <!-- Capability chips. Every claim here is backed by a test in the repo. -->
+    <g font-family="'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'DejaVu Sans Mono',monospace" font-size="17">
+      <g transform="translate(200 520)">
+        <rect width="196" height="42" rx="21" fill="#d6ff4b" fill-opacity="0.09" stroke="#d6ff4b" stroke-opacity="0.34"/>
+        <circle cx="24" cy="21" r="4" fill="#d6ff4b"/>
+        <text x="38" y="27" fill="#d6ff4b">19 detectors</text>
+      </g>
+      <g transform="translate(412 520)">
+        <rect width="196" height="42" rx="21" fill="#6fd3ff" fill-opacity="0.09" stroke="#6fd3ff" stroke-opacity="0.34"/>
+        <circle cx="24" cy="21" r="4" fill="#6fd3ff"/>
+        <text x="38" y="27" fill="#9fe2ff">209 tests</text>
+      </g>
+      <g transform="translate(624 520)">
+        <rect width="286" height="42" rx="21" fill="#eaf2ff" fill-opacity="0.05" stroke="#27364a"/>
+        <circle cx="24" cy="21" r="4" fill="#8fa3bd"/>
+        <text x="38" y="27" fill="#b7c6d9">no upload · no account</text>
+      </g>
+    </g>
+
+    <!-- Bottom rule and licence note. -->
+    <rect x="84" y="600" width="1112" height="1" fill="#27364a"/>
+    <text x="84" y="626"
+          font-family="'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'DejaVu Sans Mono',monospace"
+          font-size="14" letter-spacing="1.6" fill="#5d6e85">MIT LICENCE · GPL CORES FETCHED AT BUILD TIME · NO ROMS OR BIOS BUNDLED</text>
+  </g>
+</svg>
