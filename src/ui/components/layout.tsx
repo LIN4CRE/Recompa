@@ -20,6 +20,7 @@ import { ALL_DESCRIPTORS } from '@/engines/descriptors';
 import { detectEnvironment } from '@/core/environment';
 import type { RuntimeEnvironment } from '@/core/types';
 import { Spinner } from './primitives';
+import { SupportButton } from './SupportButton';
 
 const NAV = [
   { path: '/', label: 'Home', icon: Home },
@@ -188,6 +189,9 @@ function SystemFooter() {
 
   return (
     <div className="border-t border-line p-3">
+      <div className="mb-2">
+        <SupportButton compact />
+      </div>
       <div className="rounded-lg border border-line bg-panel/70 p-2.5">
         <div className="mono-label mb-2 flex items-center gap-1.5">
           <Cpu className="size-3" /> Runtime

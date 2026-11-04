@@ -54,6 +54,8 @@ interface StartArgs {
   savedSram: Uint8Array | null;
   audio: boolean;
   volume: number;
+  /** Platform firmware (e.g. PlayStation BIOS), already validated and read. */
+  bios?: Uint8Array | null;
   onSram: (sram: Uint8Array) => void;
   onStatus?: (status: PlayerStatus) => void;
   onReady?: (descriptor: EngineDescriptor, session: EngineSession) => void;
@@ -141,6 +143,7 @@ export function useEmulator(): EmulatorHandle & { start: (args: StartArgs) => Pr
         audio: args.audio,
         volume: args.volume,
         savedSram: args.savedSram,
+        dependencies: args.bios ? { bios: args.bios } : undefined,
         format: null,
         header: { strippedBytes: 0, fields: {}, warnings: [] },
         signal: controller.signal,
