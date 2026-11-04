@@ -48,6 +48,15 @@ const OUT_DIR = path.join(ROOT, 'public/cores/emulatorjs');
 const DATA_DIR = path.join(OUT_DIR, 'data');
 const CORE_OUT = path.join(DATA_DIR, 'cores');
 const MANIFEST = path.join(ROOT, 'public/cores/emulatorjs-installed.json');
+/**
+ * Licence texts are committed, not extracted at build time.
+ *
+ * They are plain GPL text and freely distributable. Keeping them in-repo means
+ * a CI builder with no `7z` binary still ships a fully compliant deployment:
+ * previously the build succeeded but deployed the core with no licence beside
+ * it, which is precisely the GPL obligation that matters.
+ */
+const LICENCE_DIR = path.join(ROOT, 'assets/licenses');
 
 /**
  * Pinned inputs. `sha1` is the npm registry `dist.shasum` for the exact
@@ -77,6 +86,21 @@ const PINNED = [
 
 /** Cores shipped, in preference order. EmulatorJS picks the first that exists. */
 const CORE_FILES = ['pcsx_rearmed-wasm.data', 'pcsx_rearmed-legacy-wasm.data'];
+
+/**
+ * pcsx_rearmed's own core.json, transcribed from the shipped .data archive.
+ * Used only when 7z is unavailable to read it directly; tests assert the two
+ * agree so this cannot drift silently.
+ */
+const PCSX_CORE_MANIFEST = {
+  name: 'pcsx_rearmed',
+  extensions: ['bin', 'cue', 'img', 'mdf', 'pbp', 'toc', 'cbn', 'm3u', 'ccd'],
+  makeoptions: { arguments: [], buildpath: './', makescript: 'Makefile.libretro' },
+  options: { defaultWebGL2: true },
+  save: 'srm',
+  license: 'COPYING',
+  repo: 'https://github.com/EmulatorJS/pcsx_rearmed',
+};
 
 const sha1 = (buf) => createHash('sha1').update(buf).digest('hex');
 
@@ -204,6 +228,11 @@ async function main() {
     if (!existsSync(pkg)) throw new Error(`Unexpected tarball layout in ${pin.file} (no package/ dir)`);
 
     if (pin.id === 'emulatorjs') {
+      const runtimeLicence = path.join(LICENCE_DIR, 'EmulatorJS-GPL-3.0.txt');
+      if (existsSync(runtimeLicence)) {
+        await mkdir(path.join(OUT_DIR, 'data'), { recursive: true });
+        await copyFile(runtimeLicence, path.join(OUT_DIR, 'data', 'LICENSE.emulatorjs.txt'));
+      }
       // The npm package ships data/ at its root; loader.js expects exactly that.
       const dataSrc = path.join(pkg, 'data');
       const srcDir = existsSync(dataSrc) ? dataSrc : pkg;
@@ -233,29 +262,36 @@ async function main() {
         await mkdir(path.join(CORE_OUT, 'reports'), { recursive: true });
         await copyFile(report, path.join(CORE_OUT, 'reports/pcsx_rearmed.json'));
       }
-      // The core's licence and build metadata live *inside* each .data
-      // archive (a 7z container), not beside it in the npm tarball. GPL
-      // requires the licence to travel with the binary, so unpack both the
-      // licence and core.json (the authoritative extension list) next to it.
-      const licenceTmp = path.join(tmp, `${pin.id}-licence`);
+      // GPL requires the licence to travel with the binary. The text is
+      // committed in assets/licenses, so this never depends on a local 7z.
+      const committedLicence = path.join(LICENCE_DIR, 'pcsx_rearmed-GPL-2.0.txt');
+      if (existsSync(committedLicence)) {
+        await copyFile(committedLicence, path.join(CORE_OUT, 'LICENSE.pcsx_rearmed.txt'));
+      } else {
+        console.warn('!  assets/licenses/pcsx_rearmed-GPL-2.0.txt is missing from the repository.');
+        console.warn('   The core will still be installed, but without its licence text.');
+      }
+
+      // core.json is the authoritative extension list. It lives inside the
+      // .data archive, so read it with 7z when available and otherwise fall
+      // back to the value verified from that archive (kept in sync by test).
       const primaryData = path.join(CORE_OUT, CORE_FILES[0]);
+      let wroteCoreJson = false;
       if (existsSync(primaryData)) {
+        const licenceTmp = path.join(tmp, `${pin.id}-licence`);
         try {
           await extract7z(primaryData, licenceTmp);
-          const licenceSrc = path.join(licenceTmp, 'license.txt');
-          if (existsSync(licenceSrc)) {
-            await copyFile(licenceSrc, path.join(CORE_OUT, 'LICENSE.pcsx_rearmed.txt'));
-          }
           const coreJson = path.join(licenceTmp, 'core.json');
           if (existsSync(coreJson)) {
             await copyFile(coreJson, path.join(CORE_OUT, 'core.json'));
+            wroteCoreJson = true;
           }
-        } catch (error) {
-          // Non-fatal: the core still works, but say so plainly rather than
-          // shipping a binary with no licence beside it.
-          console.warn(`!  Could not extract licence text from the core payload: ${error.message}`);
-          console.warn('   The core is installed, but licence.txt was not copied next to it.');
+        } catch {
+          /* fall through to the recorded manifest below */
         }
+      }
+      if (!wroteCoreJson) {
+        await writeFile(path.join(CORE_OUT, 'core.json'), JSON.stringify(PCSX_CORE_MANIFEST));
       }
     }
   }

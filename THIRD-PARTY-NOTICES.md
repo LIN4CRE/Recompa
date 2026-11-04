@@ -40,7 +40,8 @@ Recompa distributes **no game ROMs, BIOS images, firmware or commercial game ass
 | Project | Licence | Role |
 | --- | --- | --- |
 | [No-Intro DAT sets (via libretro/libretro-database)](https://github.com/libretro/libretro-database) | CC-BY-SA-4.0 | ROM fingerprint metadata: titles, sizes, CRC32/MD5/SHA-1. No game data is included or distributed. |
-| [EmulatorJS (optional, not bundled)](https://github.com/EmulatorJS/EmulatorJS) | GPL-3.0 | Optional additional libretro cores for wider platform coverage. Installed by the operator with `npm run fetch:emulatorjs`; not part of this repository. |
+| [EmulatorJS](https://github.com/EmulatorJS/EmulatorJS) | GPL-3.0 | Browser emulator runtime. Powers the PlayStation adapter. Never committed; unpacked into `public/cores/emulatorjs` by `scripts/setup-emulatorjs.mjs` from SHA-1-pinned npm tarballs. |
+| [pcsx_rearmed (EmulatorJS build)](https://github.com/EmulatorJS/pcsx_rearmed) | GPL-2.0 | PlayStation 1 libretro core, shipped as WebAssembly. Not committed; fetched at build time alongside EmulatorJS. |
 | [N64Recomp / N64ModernRuntime / Zelda64Recomp](https://github.com/N64Recomp/N64Recomp) | MIT (tool) / GPL-3.0 (runtime) | Audited and referenced for the static-recompilation ladder. No source or binary is vendored or redistributed here. |
 | [REA (morluto/rea)](https://github.com/morluto/rea) | MIT | Optional agent-assisted reverse-engineering assistant, invoked only by the local processing service when configured. |
 | [Ghidra / Rizin](https://github.com/rizinorg/rizin) | Apache-2.0 / LGPL-3.0 | Native reverse-engineering tools used only by the optional local processing service. Not distributed with Recompa. |
@@ -54,9 +55,12 @@ Recompa distributes **no game ROMs, BIOS images, firmware or commercial game ass
   work and remains MIT.
 - **No-Intro data (CC-BY-SA-4.0).** The generated fingerprint files in `public/data/catalogue/` are
   derivative works of that dataset and are shared under the same licence. They contain metadata only.
-- **EmulatorJS (GPL-3.0).** Not included in this repository. If you run `npm run fetch:emulatorjs`
-  and deploy the result, you are distributing GPL-3.0 binaries and must provide the corresponding
-  source for them.
+- **EmulatorJS (GPL-3.0) and pcsx_rearmed (GPL-2.0).** Neither is included in this repository: the
+  tarballs are git-ignored and unpacked at build time. Deploying the result distributes GPL binaries,
+  so you must be able to offer the corresponding source. The licence texts are committed under
+  `assets/licenses/` and copied next to the binaries they cover, and
+  `public/cores/emulatorjs-installed.json` records the exact versions and SHA-1s that were shipped.
+  See `docs/PLAYSTATION.md`.
 - **Ghidra (Apache-2.0) / Rizin (LGPL-3.0).** Only invoked as separate local processes by the
   optional service; no code is linked into Recompa.
 

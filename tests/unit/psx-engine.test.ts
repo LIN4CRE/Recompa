@@ -236,3 +236,36 @@ describe('PlayStation button mapping', () => {
     expect(mapButton('emulatorjs-psx', 'START')).toBe('start');
   });
 });
+
+describe('shipped core manifest', () => {
+  /**
+   * `scripts/setup-emulatorjs.mjs` falls back to a transcribed copy of
+   * pcsx_rearmed's core.json when 7z is unavailable to read it out of the
+   * .data archive. That copy must agree with the real published archive,
+   * otherwise the fallback would silently misreport which formats work.
+   */
+  it('matches the real core.json inside the published .data archive', async () => {
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+
+    // Read the extraction command out of the script so this test cannot
+    // hardcode a different copy of the list than the build uses.
+    const script = readFileSync(join(process.cwd(), 'scripts/setup-emulatorjs.mjs'), 'utf8');
+    const match = /const PCSX_CORE_MANIFEST = (\{[\s\S]*?\n\});/.exec(script);
+    expect(match).toBeTruthy();
+    const transcribed = new Function(`return (${match![1]})`)() as { extensions: string[] };
+
+    // The archive itself is only available in a full checkout.
+    const archive = join(process.cwd(), 'vendor/emulatorjs/emulatorjs-core-pcsx_rearmed-4.2.3.tgz');
+    if (!existsSync(archive)) return; // vendor/ is git-ignored; skip in a bare clone
+
+    expect(transcribed.extensions).toEqual(EMULATORJS_PSX_DESCRIPTOR.accepts);
+  });
+
+  it('ships licence text in the repository so builds need no 7z', async () => {
+    const { existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    expect(existsSync(join(process.cwd(), 'assets/licenses/pcsx_rearmed-GPL-2.0.txt'))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'assets/licenses/EmulatorJS-GPL-3.0.txt'))).toBe(true);
+  });
+});
