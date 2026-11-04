@@ -951,18 +951,136 @@ function detectAtari(r: ByteReader, _ext: string): DetectionResult | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* Disc images                                                         */
+/* Optical media                                                       */
 /* ------------------------------------------------------------------ */
 
-const ISO9660_PVD_OFFSET = 16 * 2048;
+/**
+ * Sector geometry the detectors probe.
+ *
+ * A PlayStation disc can reach us in four shapes and they are *not*
+ * interchangeable:
+ *
+ *  - 2352-byte raw sectors (MODE1/2352, MODE2/2352, CDI/2352): the classic
+ *    `.bin` from a `.cue`-based rip. Payload starts at byte 16 of the sector,
+ *    after the 12-byte sync pattern and 4-byte header.
+ *  - 2048-byte cooked sectors: `.iso`, and `.bin` rips produced with the
+ *    "ISO" track mode.
+ *  - 2336-byte "mode 2 form 1 without sync" (MODE2/2336): payload starts at
+ *    byte 8 after the 8-byte subheader.
+ *  - 2324-byte CDI raw.
+ *
+ * The previous implementation only ever looked at `16 * 2048`, which is why
+ * every raw `.bin` — including `Digimon World 3.bin` — fell through to
+ * "unknown" no matter how valid it was.
+ */
+interface SectorProbe {
+  sectorSize: number;
+  /** Offset of the 2048-byte user payload inside a sector. */
+  payloadOffset: number;
+  label: string;
+}
+
+const SECTOR_PROBES: SectorProbe[] = [
+  // MODE2/2352 — the layout of virtually every PlayStation rip. The 8-byte
+  // subheader (file, channel, submode, coding, then a copy) pushes user data
+  // to byte 24, not 16. Getting this wrong was the second half of the bug.
+  { sectorSize: 2352, payloadOffset: 24, label: '2352-byte raw MODE2 (subheader)' },
+  // MODE1/2352 — a plain data track with no subheader; data at byte 16.
+  { sectorSize: 2352, payloadOffset: 16, label: '2352-byte raw MODE1' },
+  { sectorSize: 2048, payloadOffset: 0, label: '2048-byte cooked' },
+  { sectorSize: 2336, payloadOffset: 8, label: '2336-byte raw (subheader only)' },
+  { sectorSize: 2324, payloadOffset: 0, label: '2324-byte CDI' },
+];
+
+/** ISO 9660 Primary Volume Descriptor lives in sector 16 of the data track. */
+const PVD_SECTOR = 16;
+/** `CD001` follows the descriptor type byte. */
+const ISO_PVD_TYPE = 0x01;
+const ISO_MAGIC = 'CD001';
+
+/** The PlayStation licence string sits at the start of sector 4's user data. */
+const PSX_LICENCE = 'Licensed  by          Sony Computer Entertainment';
+
+function pvdOffset(probe: SectorProbe): number {
+  return PVD_SECTOR * probe.sectorSize + probe.payloadOffset;
+}
+
+function psxLicenceOffset(probe: SectorProbe): number {
+  // The notice lives in the system area's user data, so it follows the same
+  // payload offset as the PVD (byte 24 for MODE2/2352, 16 for MODE1/2352).
+  return 4 * probe.sectorSize + probe.payloadOffset;
+}
+
+interface DiscGeometry {
+  probe: SectorProbe;
+  volumeId: string;
+  systemId: string;
+  systemIdRaw: string;
+  psxLicence: boolean;
+  /** True when the 16-sector system area starts with a valid sync pattern. */
+  hasSyncPattern: boolean;
+}
+
+/** Read the PVD through one geometry, or null when it does not line up. */
+function readPvd(r: ByteReader, probe: SectorProbe): DiscGeometry | null {
+  const off = pvdOffset(probe);
+  if (!r.has(off, 7)) return null;
+  if (r.u8(off) !== ISO_PVD_TYPE) return null;
+  if (r.ascii(off + 1, 5) !== ISO_MAGIC) return null;
+
+  const systemIdRaw = r.ascii(off + 8, 32).replace(/[.\0]+$/, '').trim();
+  const volumeId = r.ascii(off + 40, 32).replace(/[.\0]+$/, '').trim();
+
+  // The licence notice is at sector 4, but rips occasionally shift the system
+  // area; scanning the first 16 sectors is cheap (≈36 KB) and much more robust.
+  const systemAreaEnd = Math.min(r.length, 16 * probe.sectorSize);
+  const psxLicence =
+    r.ascii(psxLicenceOffset(probe), 32).includes('Licensed') ||
+    r.indexOf(A('Licensed  by'), 0, systemAreaEnd) >= 0 ||
+    r.indexOf(A('Sony Computer Entertainment'), 0, systemAreaEnd) >= 0;
+
+  // A real MODE1/MODE2 sector begins 00 FF×10 00 (sync) before the header.
+  // Checked byte-by-byte because ByteReader.ascii() renders non-printables as '.'.
+  let hasSyncPattern = false;
+  if (probe.sectorSize > 2048 && r.has(0, 12)) {
+    hasSyncPattern = r.u8(0) === 0x00 && r.u8(11) === 0x00;
+    for (let i = 1; i <= 10 && hasSyncPattern; i++) {
+      if (r.u8(i) !== 0xff) hasSyncPattern = false;
+    }
+  }
+
+  return { probe, volumeId, systemId: systemIdRaw, systemIdRaw, psxLicence, hasSyncPattern };
+}
+
+/** Try every geometry; return the first that yields a valid PVD. */
+function probeDiscGeometry(r: ByteReader): DiscGeometry | null {
+  for (const probe of SECTOR_PROBES) {
+    const geometry = readPvd(r, probe);
+    if (geometry) return geometry;
+  }
+  return null;
+}
 
 function detectDisc(r: ByteReader, ext: string): DetectionResult | null {
+  /* -------------------------------------------------------------- */
+  /* CUE sheet — a text index, never a game image on its own.       */
+  /* -------------------------------------------------------------- */
   const isCueText =
-    ext === 'cue' ||
-    (r.length < 64 * 1024 && r.indexOf(A('FILE '), 0, 4096) === 0);
+    ext === 'cue' || (r.length < 64 * 1024 && r.indexOf(A('FILE '), 0, 4096) === 0);
   if (isCueText) {
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(r.slice(0, Math.min(r.length, 64 * 1024)));
-    const fileRefs = Array.from(text.matchAll(/FILE\s+"([^"]+)"\s+BINARY/gi)).map((m) => m[1]!);
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(
+      r.slice(0, Math.min(r.length, 64 * 1024)),
+    );
+    const fileRefs = Array.from(text.matchAll(/FILE\s+"([^"]+)"\s+(?:BINARY|MOTOROLA|WAVE)/gi)).map(
+      (m) => m[1]!,
+    );
+    const trackDefs = Array.from(text.matchAll(/TRACK\s+(\d{1,2})\s+(\S+)/gi)).map((m) => ({
+      number: Number(m[1]),
+      mode: m[2]!.toUpperCase(),
+    }));
+    const hasIndex = /INDEX\s+0?1\s+\d{1,3}:\d{2}:\d{2}/i.test(text);
+    const valid = fileRefs.length > 0 && trackDefs.length > 0 && hasIndex;
+
     return {
       platformId: 'psx',
       platformConfidence: 'probable',
@@ -971,81 +1089,44 @@ function detectDisc(r: ByteReader, ext: string): DetectionResult | null {
         label: 'CD cue sheet',
         kind: 'container',
         confidence: 'certain',
-        evidence: ['CUE sheet text ("FILE … BINARY" lines)'],
+        evidence: ['CUE sheet text ("FILE … BINARY" / "TRACK … INDEX" lines)'],
       },
-      header: { strippedBytes: 0, fields: { trackCount: fileRefs.length }, warnings: [] },
+      header: {
+        strippedBytes: 0,
+        fields: { trackCount: trackDefs.length, fileCount: fileRefs.length },
+        warnings: [],
+      },
       payload: r.bytes,
       facts: [
-        { label: 'Referenced tracks', value: String(fileRefs.length) },
-        { label: 'Missing companion files', value: fileRefs.join(', ') || '—' },
+        { label: 'Referenced tracks', value: fileRefs.join(', ') || '—' },
+        { label: 'Track modes', value: trackDefs.map((t) => t.mode).join(', ') || '—' },
+        {
+          label: 'Companion files',
+          value: fileRefs.length ? `${fileRefs.length} data file(s) referenced` : 'none declared',
+        },
       ],
-      errors: [
-        err(
-          'CUE_INCOMPLETE',
-          'error',
-          'A .cue sheet is only a track index — the referenced .bin tracks must be added too.',
-          `Upload the ${fileRefs.length} referenced .bin file(s) alongside this cue sheet, or upload a single .chd/.iso.`,
-        ),
-      ],
-      regionHint: null,
-      embeddedTitle: null,
-      serial: null,
-    };
-  }
-
-  // CHD
-  if (r.startsWith(0, A('MComprHD'))) {
-    return {
-      platformId: 'psx',
-      platformConfidence: 'probable',
-      format: {
-        id: 'chd',
-        label: 'MAME CHD compressed disc image',
-        kind: 'container',
-        confidence: 'certain',
-        evidence: ['"MComprHD" magic at offset 0'],
-      },
-      header: emptyHeader(),
-      payload: r.bytes,
-      facts: [{ label: 'Container', value: 'CHD v5 (compressed hunks of data)' }],
-      errors: [],
-      regionHint: null,
-      embeddedTitle: null,
-      serial: null,
-    };
-  }
-
-  // Raw disc image: check ISO9660 primary volume descriptor.
-  if (r.has(ISO9660_PVD_OFFSET, 6) && r.u8(ISO9660_PVD_OFFSET) === 0x01 && r.ascii(ISO9660_PVD_OFFSET + 1, 5) === 'CD001') {
-    const volumeId = r.ascii(ISO9660_PVD_OFFSET + 40, 32).replace(/\0/g, '').trim();
-    const systemId = r.ascii(ISO9660_PVD_OFFSET + 8, 32).replace(/\0/g, '').trim();
-    const isPsx = systemId.toUpperCase().includes('PLAYSTATION') || r.indexOf(A('PLAYSTATION'), 0, 8 * 2048) >= 0;
-    return {
-      platformId: isPsx ? 'psx' : 'psx',
-      platformConfidence: isPsx ? 'certain' : 'probable',
-      format: {
-        id: 'iso9660',
-        label: 'ISO 9660 disc image',
-        kind: 'raw',
-        confidence: 'certain',
-        evidence: ['ISO 9660 PVD "CD001" at sector 16'],
-      },
-      header: { strippedBytes: 0, fields: { volumeId, systemId }, warnings: [] },
-      payload: r.bytes,
-      facts: [
-        { label: 'Volume ID', value: volumeId || '—' },
-        { label: 'System ID', value: systemId || '—' },
-        { label: 'PSX system area', value: isPsx ? 'PlayStation licence string found' : 'not found' },
-      ],
-      errors: isPsx
-        ? []
+      errors: valid
+        ? fileRefs.length
+          ? [
+              {
+                code: 'CUE_INCOMPLETE',
+                severity: 'warning',
+                message:
+                  'This is a cue sheet, not the disc itself — it must be loaded together with the tracks it names.',
+                detail:
+                  `Add ${fileRefs.map((f) => `"${f}"`).join(', ')} to the same import (or drop the whole folder) ` +
+                  'and Recompa will combine them automatically.',
+              },
+            ]
+          : []
         : [
-            err(
-              'DISC_SYSTEM_UNCLEAR',
-              'warning',
-              'The disc contains an ISO 9660 filesystem but no PlayStation system identifier was found.',
-              'Recompa will treat it as a PlayStation disc; if it is a PC-FX/Sega CD disc the engine will reject it at load time.',
-            ),
+            {
+              code: 'CUE_MALFORMED',
+              severity: 'error',
+              message: 'The cue sheet does not describe a usable disc.',
+              detail:
+                'A valid sheet needs a FILE line naming a binary track, a TRACK line with its mode, and an INDEX 01 position.',
+            },
           ],
       regionHint: null,
       embeddedTitle: null,
@@ -1053,30 +1134,182 @@ function detectDisc(r: ByteReader, ext: string): DetectionResult | null {
     };
   }
 
-  // PSX PAL/RAW sector 16 scan (sector size 2352) - licence text at 0x00.
-  if (ext === 'bin' || ext === 'img' || ext === 'iso') {
-    const magic = r.startsWith(0, A('PLAYSTATION'));
-    if (magic) {
-      return {
-        platformId: 'psx',
-        platformConfidence: 'probable',
-        format: {
-          id: 'psx-raw',
-          label: 'PlayStation raw sector image',
-          kind: 'raw',
-          confidence: 'probable',
-          evidence: ['"PLAYSTATION" licence string at offset 0'],
+  /* -------------------------------------------------------------- */
+  /* M3U playlist                                                   */
+  /* -------------------------------------------------------------- */
+  if (ext === 'm3u') {
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(r.slice(0, Math.min(r.length, 64 * 1024)));
+    const entries = text
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+    return {
+      platformId: 'psx',
+      platformConfidence: 'probable',
+      format: {
+        id: 'm3u',
+        label: 'Disc playlist',
+        kind: 'container',
+        confidence: 'certain',
+        evidence: ['M3U playlist text'],
+      },
+      header: { strippedBytes: 0, fields: { entries: entries.length }, warnings: [] },
+      payload: r.bytes,
+      facts: [{ label: 'Playlist entries', value: entries.join(', ') || '—' }],
+      errors: [
+        {
+          code: 'CUE_INCOMPLETE',
+          severity: 'warning',
+          message: 'A playlist references other files and is not a disc image by itself.',
+          detail: `Load the playlist together with: ${entries.join(', ') || '(no entries listed)'}.`,
         },
-        header: emptyHeader(),
-        payload: r.bytes,
-        facts: [{ label: 'Sector format', value: 'assumed 2352-byte raw sector' }],
-        errors: [],
-        regionHint: null,
-        embeddedTitle: null,
-        serial: null,
-      };
-    }
+      ],
+      regionHint: null,
+      embeddedTitle: null,
+      serial: null,
+    };
   }
+
+  /* -------------------------------------------------------------- */
+  /* CHD                                                            */
+  /* -------------------------------------------------------------- */
+  if (r.startsWith(0, A('MComprHD'))) {
+    const version = r.has(12, 4) ? r.u8(12) : 0;
+    // CHD metadata tags carry the original format ("CD-ROM", "DVD-ROM"…).
+    const looksCd = r.indexOf(A('CD-ROM'), 0, Math.min(r.length, 256 * 1024)) >= 0;
+    const looksDvd = r.indexOf(A('DVD-ROM'), 0, Math.min(r.length, 256 * 1024)) >= 0;
+    const platformId = looksDvd ? null : looksCd ? 'psx' : null;
+    return {
+      platformId,
+      platformConfidence: 'possible',
+      format: {
+        id: 'chd',
+        label: 'MAME CHD compressed disc image',
+        kind: 'container',
+        confidence: 'certain',
+        evidence: ['"MComprHD" magic at offset 0'],
+      },
+      header: { strippedBytes: 0, fields: { chdVersion: version }, warnings: [] },
+      payload: r.bytes,
+      facts: [
+        { label: 'Container', value: `CHD v${version || '?'} (compressed hunks of data)` },
+        { label: 'Original media', value: looksDvd ? 'DVD-ROM' : looksCd ? 'CD-ROM' : 'not recorded' },
+      ],
+      errors: [
+        {
+          code: 'ENGINE_FORMAT_UNSUPPORTED',
+          severity: 'error',
+          message: 'No installed engine can read CHD disc images.',
+          detail:
+            'The PlayStation cores available here accept BIN/CUE (and pcsx_rearmed also takes PBP, MDF, CCD/IMG). ' +
+            'Convert the image to BIN/CUE and import that instead — the CHD itself does not need modifying.',
+        },
+      ],
+      regionHint: null,
+      embeddedTitle: null,
+      serial: null,
+    };
+  }
+
+  /* -------------------------------------------------------------- */
+  /* PBP (PSP package, also used for PS1 Classics)                   */
+  /* -------------------------------------------------------------- */
+  if (r.startsWith(0, A('PSISOIMG0000')) || (r.has(0, 4) && r.u8(0) === 0x00 && r.u8(1) === 0x50 && r.u8(2) === 0x42 && r.u8(3) === 0x50)) {
+    const isPs1Classic = r.startsWith(0, A('PSISOIMG0000'));
+    return {
+      platformId: isPs1Classic ? 'psx' : 'psp',
+      platformConfidence: isPs1Classic ? 'certain' : 'probable',
+      format: {
+        id: 'pbp',
+        label: isPs1Classic ? 'PS1 Classics PBP package' : 'PlayStation Portable PBP package',
+        kind: 'container',
+        confidence: 'certain',
+        evidence: [isPs1Classic ? '"PSISOIMG0000" offset table at byte 0' : 'PBP header "\\0PBP" at offset 0'],
+      },
+      header: emptyHeader(),
+      payload: r.bytes,
+      facts: [{ label: 'Container', value: isPs1Classic ? 'PBP with embedded PSISOIMG' : 'PBP' }],
+      errors: isPs1Classic
+        ? []
+        : [
+            {
+              code: 'ENGINE_FORMAT_UNSUPPORTED',
+              severity: 'error',
+              message: 'PSP support is not implemented.',
+              detail: 'Recompa has no PSP engine installed; PBP files cannot be launched.',
+            },
+          ],
+      regionHint: null,
+      embeddedTitle: null,
+      serial: null,
+    };
+  }
+
+  /* -------------------------------------------------------------- */
+  /* Generic ISO 9660 / PlayStation raw image                       */
+  /* -------------------------------------------------------------- */
+  const geometry = probeDiscGeometry(r);
+  if (geometry) {
+    const { probe } = geometry;
+    const isPsx =
+      geometry.systemId.toUpperCase().includes('PLAYSTATION') ||
+      geometry.psxLicence;
+    const isRaw = probe.sectorSize !== 2048;
+    return {
+      platformId: 'psx',
+      platformConfidence: isPsx ? 'certain' : 'probable',
+      format: {
+        id: isRaw ? 'psx-raw' : 'iso9660',
+        label: isRaw
+          ? `PlayStation raw sector image (${probe.sectorSize} B/sector)`
+          : 'ISO 9660 disc image',
+        kind: 'raw',
+        confidence: 'certain',
+        evidence: [
+          `ISO 9660 PVD "CD001" at sector 16 (${probe.label})`,
+          ...(geometry.psxLicence ? ['PlayStation licence string in the system area'] : []),
+          ...(geometry.systemId.toUpperCase().includes('PLAYSTATION')
+            ? [`System Identifier reads "${geometry.systemId}"`]
+            : []),
+        ],
+      },
+      header: {
+        strippedBytes: 0,
+        fields: {
+          sectorSize: probe.sectorSize,
+          payloadOffset: probe.payloadOffset,
+          volumeId: geometry.volumeId,
+          systemId: geometry.systemId,
+        },
+        warnings: [],
+      },
+      payload: r.bytes,
+      facts: [
+        { label: 'Volume ID', value: geometry.volumeId || '—' },
+        { label: 'System ID', value: geometry.systemId || '—' },
+        { label: 'Sector size', value: `${probe.sectorSize} bytes (${probe.label})` },
+        { label: 'PSX system area', value: geometry.psxLicence ? 'licence string found' : 'not found' },
+      ],
+      errors: isPsx
+        ? []
+        : [
+            {
+              code: 'DISC_SYSTEM_UNCLEAR',
+              severity: 'warning',
+              message:
+                'This is a valid ISO 9660 image but nothing identifies it as a PlayStation disc.',
+              detail:
+                'No licence string or "PLAYSTATION" system identifier was found. It may be a PC game, ' +
+                'a CD-Extra disc or a non-PSX console disc; the emulator will reject it if so.',
+            },
+          ],
+      regionHint: null,
+      embeddedTitle: null,
+      serial: null,
+    };
+  }
+
   return null;
 }
 

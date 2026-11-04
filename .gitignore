@@ -18,3 +18,7 @@ public/test-roms/
 # Analyzer service artefacts
 server/model-cache/
 *.log
+
+# Vendored third-party emulator runtimes (GPL-3.0). Fetched by
+# scripts/fetch-emulatorjs.mjs at setup time; never committed.
+vendor/

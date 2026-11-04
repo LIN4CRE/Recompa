@@ -40,7 +40,11 @@ describe('analyzeBytes', () => {
   });
 
   it('records the firmware dependency for disc platforms', async () => {
-    const cue = new TextEncoder().encode('FILE "game.bin" BINARY\n  TRACK 01 MODE2/2352\n');
+    // A valid sheet needs FILE + TRACK + INDEX 01; without the INDEX the
+    // detector (correctly) classifies it as malformed instead.
+    const cue = new TextEncoder().encode(
+      'FILE "game.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n',
+    );
     const report = await analyzeBytes(cue, 'game.cue', { catalogue: false });
     expect(report.platform?.id).toBe('psx');
     expect(report.dependencies.some((d) => d.name.includes('BIOS') && d.required)).toBe(true);
