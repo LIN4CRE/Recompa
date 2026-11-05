@@ -7,7 +7,14 @@ All notable changes to Recompa are documented here. The format follows
 ## [Unreleased]
 
 Audit and hardening pass, 5 November 2026. See `docs/AUDIT-2026-11-05.md` for
-the full findings, priorities and verification record.
+the full findings, priorities, deployment record and verification results.
+
+Deployed through the existing GitHub-linked Vercel project from this branch:
+preview `dpl_3XrgLa7gEW5S5imPqgWNJQthKPso`, then production
+`dpl_rDhcGZGpgxjqG279d1mX6EHSchBR` (READY / PROMOTED, alias
+<https://recompa.vercel.app>). The live app, SPA rewrite, catalogue, manifest,
+hashed JS bundle, GPL core payload and licence texts were smoke-tested after
+promotion. `main` was not modified.
 
 ### Fixed
 
