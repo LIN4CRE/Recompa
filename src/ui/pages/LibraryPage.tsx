@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Heart, Library as LibraryIcon, Play, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useLibrary } from '@/state/library';
 import { useNavigate } from '@/lib/router';
+import { useModal } from '@/lib/use-modal';
 import { GameCard } from '../components/GameCard';
 import { CoverPicker } from '../components/CoverArt';
 import { EmptyState, Panel, Tabs } from '../components/primitives';
@@ -221,31 +222,63 @@ export function LibraryPage() {
       />
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setDeleteTarget(null)} role="dialog" aria-modal>
-          <div className="panel w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold">Remove “{deleteTarget.title}”?</h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-ink-3">
-              This deletes the stored ROM bytes, battery saves, save states and test results for this entry from this device.
-              Your original file on disk is untouched.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className="btn btn-sm" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-danger btn-sm"
-                onClick={() => {
-                  void removeGame(deleteTarget.id);
-                  setDeleteTarget(null);
-                  pushToast({ kind: 'success', title: 'Removed', message: `${deleteTarget.title} was deleted from this device.` });
-                }}
-              >
-                <Trash2 className="size-3.5" /> Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeleteGameDialog
+          game={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={(game) => {
+            void removeGame(game.id);
+            setDeleteTarget(null);
+            pushToast({ kind: 'success', title: 'Removed', message: `${game.title} was deleted from this device.` });
+          }}
+        />
       )}
+    </div>
+  );
+}
+
+/**
+ * Destructive-delete confirmation.
+ *
+ * Split out of `LibraryPage` so the modal focus/Escape hook only runs while the
+ * dialog is actually mounted.
+ */
+function DeleteGameDialog({
+  game,
+  onCancel,
+  onConfirm,
+}: {
+  game: GameRecord;
+  onCancel: () => void;
+  onConfirm: (game: GameRecord) => void;
+}) {
+  const dialogRef = useModal(onCancel);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={onCancel}>
+      <div
+        ref={dialogRef}
+        className="panel w-full max-w-sm p-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-dialog-title"
+        tabIndex={-1}
+      >
+        <h3 id="delete-dialog-title" className="text-base font-semibold">
+          Remove “{game.title}”?
+        </h3>
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-3">
+          This deletes the stored ROM bytes, battery saves, save states and test results for this entry from this device. Your
+          original file on disk is untouched.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-sm" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn btn-danger btn-sm" onClick={() => onConfirm(game)}>
+            <Trash2 className="size-3.5" /> Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

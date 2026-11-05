@@ -54,6 +54,8 @@ interface StartArgs {
   savedSram: Uint8Array | null;
   audio: boolean;
   volume: number;
+  /** ScriptProcessor fallback buffer size; see EngineRunOptions. */
+  audioBufferSamples?: number;
   /** Platform firmware (e.g. PlayStation BIOS), already validated and read. */
   bios?: Uint8Array | null;
   onSram: (sram: Uint8Array) => void;
@@ -142,6 +144,7 @@ export function useEmulator(): EmulatorHandle & { start: (args: StartArgs) => Pr
         canvas: args.canvas,
         audio: args.audio,
         volume: args.volume,
+        audioBufferSamples: args.audioBufferSamples,
         savedSram: args.savedSram,
         dependencies: args.bios ? { bios: args.bios } : undefined,
         format: null,

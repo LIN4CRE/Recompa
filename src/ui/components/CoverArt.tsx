@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { ImagePlus, Upload, X } from 'lucide-react';
 import type { GameRecord } from '@/core/types';
 import { shortPlatform } from './primitives';
+import { useModal } from '@/lib/use-modal';
 
 /**
  * Cover art.
@@ -128,7 +129,12 @@ function paletteFor(seed: string): { from: string; to: string; accent: string; p
   };
 }
 
-/** Cover picker: user-supplied image, stored locally as a data URL. */
+/**
+ * Cover picker: user-supplied image, stored locally as a data URL.
+ *
+ * The dialog is a separate component so it mounts only while open: the modal
+ * focus/Escape hook must run on mount, not on every render of the host page.
+ */
 export function CoverPicker({
   open,
   onClose,
@@ -138,14 +144,14 @@ export function CoverPicker({
   onClose: () => void;
   onSelect: (dataUrl: string) => void;
 }) {
+  if (!open) return null;
+  return <CoverDialog onClose={onClose} onSelect={onSelect} />;
+}
+
+function CoverDialog({ onClose, onSelect }: { onClose: () => void; onSelect: (dataUrl: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) setError(null);
-  }, [open]);
-
-  if (!open) return null;
+  const dialogRef = useModal(onClose);
 
   const handleFile = async (file: File) => {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
@@ -162,11 +168,19 @@ export function CoverPicker({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal>
-      <div className="panel w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="panel w-full max-w-md p-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cover-dialog-title"
+        tabIndex={-1}
+      >
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-base font-semibold">Add cover art</h3>
+            <h3 id="cover-dialog-title" className="text-base font-semibold">Add cover art</h3>
             <p className="mt-1 text-xs leading-relaxed text-ink-3">
               Your image stays on this device. Recompa ships no commercial box art and never fetches it.
             </p>

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from '@/lib/router';
 import { useLibrary } from '@/state/library';
-import { getReport, getSram, listTests, listStates } from '@/db/database';
+import { getReport, getSram, hasPayload, listTests, listStates } from '@/db/database';
 import type { AnalysisReport, GameRecord, TestRun } from '@/core/types';
 import { hexdump } from '@/core/analyze';
 import { downloadBlob } from '@/lib/exports';
@@ -52,22 +52,28 @@ export function GamePage({ gameId }: { gameId: string }) {
   const [tests, setTests] = useState<TestRun[]>([]);
   const [states, setStates] = useState<Awaited<ReturnType<typeof listStates>>>([]);
   const [hasSram, setHasSram] = useState(false);
+  // A report can exist without its ROM bytes: "Store ROM bytes after analysis"
+  // is off, or the payload was deleted. Launching would fail, so the button
+  // says why instead of offering a guaranteed error.
+  const [payloadStored, setPayloadStored] = useState<boolean | null>(null);
   const [coverOpen, setCoverOpen] = useState(false);
   const [hexOpen, setHexOpen] = useState(false);
 
   useEffect(() => {
     if (!game) return;
     void (async () => {
-      const [rep, testList, stateList, sram] = await Promise.all([
+      const [rep, testList, stateList, sram, stored] = await Promise.all([
         getReport(game.reportId),
         listTests(game.id),
         listStates(game.id),
         getSram(game.id),
+        hasPayload(game.payloadId),
       ]);
       setReport(rep ?? null);
       setTests(testList);
       setStates(stateList);
       setHasSram(Boolean(sram?.bytes?.length));
+      setPayloadStored(stored);
     })();
   }, [game]);
 
@@ -97,15 +103,27 @@ export function GamePage({ gameId }: { gameId: string }) {
           <CoverArt game={game} className="shadow-2xl" editable onPick={() => setCoverOpen(true)} />
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             <button
-              className={clsx('btn btn-sm', target?.runnable ? 'btn-primary col-span-2' : 'col-span-2')}
-              onClick={() =>
-                target?.runnable
-                  ? navigate(`/play/${game.id}`)
-                  : pushToast({ kind: 'warning', title: 'Nothing to launch', message: job?.plan.summary ?? 'No engine available.' })
-              }
-              disabled={!target?.runnable}
+              className={clsx('btn btn-sm', target?.runnable && payloadStored ? 'btn-primary col-span-2' : 'col-span-2')}
+              onClick={() => {
+                if (!target?.runnable) {
+                  pushToast({ kind: 'warning', title: 'Nothing to launch', message: job?.plan.summary ?? 'No engine available.' });
+                  return;
+                }
+                if (payloadStored === false) {
+                  pushToast({
+                    kind: 'warning',
+                    title: 'ROM bytes are not stored',
+                    message:
+                      'This entry was analysed without keeping the file. Re-add it through Upload with “Store ROM bytes after analysis” on.',
+                  });
+                  return;
+                }
+                navigate(`/play/${game.id}`);
+              }}
+              disabled={!target?.runnable || payloadStored === false}
             >
-              <Play className="size-3.5" /> {target?.runnable ? 'Play' : 'Not runnable'}
+              <Play className="size-3.5" />{' '}
+              {!target?.runnable ? 'Not runnable' : payloadStored === false ? 'File not kept' : 'Play'}
             </button>
             <button className="btn btn-sm" onClick={() => void updateGame(game.id, { favourite: !game.favourite })}>
               {game.favourite ? '★ Favourited' : '☆ Favourite'}

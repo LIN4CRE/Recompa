@@ -88,7 +88,9 @@ export function getDb(): Promise<IDBPDatabase<RecompaDB>> {
 export async function putPayload(bytes: Uint8Array, sha256: string): Promise<StoredPayload> {
   const db = await getDb();
   const id = sha256;
-  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  // Blob copies the view's bytes itself; slicing first would duplicate a whole
+  // disc image in memory (700 MB for a CD rip) for no benefit.
+  const blob = new Blob([bytes as BlobPart], { type: 'application/octet-stream' });
   const record: StoredPayload = { id, bytes: blob, size: bytes.length, sha256 };
   await db.put('payloads', record);
   return record;

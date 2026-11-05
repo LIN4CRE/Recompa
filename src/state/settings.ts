@@ -4,7 +4,6 @@ import { DEFAULT_KEYBINDINGS } from '@/engines/input';
 import { loadSettings, saveSettings } from '@/db/database';
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'obsidian',
   videoScale: 'auto',
   aspect: 'auto',
   filters: 'off',
@@ -16,7 +15,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   touchControls: 'auto',
   keybindings: DEFAULT_KEYBINDINGS,
   gamepadDeadzone: 0.35,
-  performanceMode: 'auto',
   keepScreenAwake: false,
   autoAnalyze: true,
   storePayloads: true,
@@ -24,7 +22,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   testDurationSeconds: 12,
   externalProcessingEndpoint: '',
   enableExternalProcessing: false,
-  telemetry: false,
 };
 
 interface SettingsState {

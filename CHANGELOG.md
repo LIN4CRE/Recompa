@@ -6,6 +6,60 @@ All notable changes to Recompa are documented here. The format follows
 
 ## [Unreleased]
 
+### Settings wiring, resilience and accessibility — 5 November 2026 (third pass)
+
+Full findings, measurements and verification: `docs/AUDIT-2026-11-05-followup.md`.
+
+#### Fixed
+
+- **Eleven settings were dead controls.** `storePayloads`, `storeStates`,
+  `autoAnalyze`, `showFps`, `videoScale`, `audioBufferSamples`, `autoFullscreen`,
+  `keepScreenAwake`, `performanceMode`, `theme` and `telemetry` were persisted
+  and (for eight of them) rendered as working controls, but no code read them.
+  Turning "Store ROM bytes after analysis" off still stored ROM bytes, and the
+  scaling selector was consumed as
+  `settings.videoScale === '1x' ? 1 : settings.videoScale === '2x' ? 1 : 1` — a
+  constant. Every setting that describes real behaviour is now implemented:
+  payload and save-state storage are honoured (the game page says "File not kept"
+  rather than offering a launch that must fail), "analyse immediately" holds
+  files in a confirmation panel before anything is read, the FPS toggle gates the
+  status line, scaling applies native/pixel-perfect sizing, `auto` aspect now
+  resolves per platform (GB is no longer stretched to 4:3), the audio buffer
+  reaches the ScriptProcessor path, fullscreen-on-launch and the Screen Wake Lock
+  are wired. `theme`, `performanceMode` and `telemetry` described nothing and
+  were removed. Guarded by `tests/unit/settings-wiring.test.ts`, which fails if
+  any `AppSettings` key is not read outside the store and the settings screen.
+- A render error anywhere unmounted the entire tree and left a blank page. A
+  top-level `ErrorBoundary` now shows the error and offers reload/home, and says
+  plainly that stored games survive a reload.
+- Storage quota failures showed the raw `QuotaExceededError`. They now explain
+  that the device is out of space and name the three remedies.
+- `putPayload()` copied the whole file before writing it; large disc images no
+  longer double their peak memory.
+- Dialogs declared `aria-modal` without any keyboard behaviour. New `useModal()`
+  adds Escape, focus move, Tab trapping and focus restore to the cover picker,
+  the delete confirmation, the processing consent dialog and the screenshot
+  preview.
+- Keyboard users had to tab through the full navigation on every page; a "Skip to
+  content" link is now the first focus stop.
+
+#### Added
+
+- `docs/AUDIT-2026-11-05-followup.md` — audit, measurements and verification for
+  this pass.
+- `src/ui/player/layout.ts` (testable aspect and scaling maths),
+  `src/lib/use-modal.ts`, `src/lib/storage-errors.ts`,
+  `src/ui/components/ErrorBoundary.tsx`.
+- Tests: `player-layout` (11), `storage-errors` (6), `use-modal` (6),
+  `error-boundary` (4), `settings-wiring` (4), `library-storage-setting` (3), plus
+  two Playwright tests that drive the new settings gates in a real browser.
+- `E2E_BASE_URL` in `playwright.config.ts` lets the suite run against a built
+  artefact instead of the dev server, so the hashed production bundle can be
+  exercised (`npm run build && npm run preview &`, then
+  `E2E_BASE_URL=http://127.0.0.1:4173 npm run test:e2e`). Verified: 7 passed,
+  1 skipped against `vite preview`.
+
+
 Audit and hardening pass, 5 November 2026. See `docs/AUDIT-2026-11-05.md` for
 the full findings, priorities, deployment record and verification results.
 

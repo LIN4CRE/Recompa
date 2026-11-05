@@ -57,6 +57,7 @@ class JsnesSession implements EngineSession {
   private measuredFps = 0;
   private lastFrameDurationMs = 0;
   private volume: number;
+  private readonly audioBufferSamples: number;
   private onSram: (() => void) | null = null;
   private destroyed = false;
   private samplesSinceReport = 0;
@@ -70,6 +71,10 @@ class JsnesSession implements EngineSession {
   ) {
     this.callbacks = callbacks;
     this.volume = options.volume;
+    // ScriptProcessor fallback buffer, user-configurable in Settings. Only used
+    // when SharedArrayBuffer/AudioWorklet is unavailable; the worklet path keeps
+    // its own fixed ring size.
+    this.audioBufferSamples = options.audioBufferSamples ?? 1024;
     const canvas = options.canvas;
     canvas.width = NES_WIDTH;
     canvas.height = NES_HEIGHT;
@@ -132,7 +137,7 @@ class JsnesSession implements EngineSession {
     this.running = true;
     this.paused = false;
     if (this.audioAllowed) {
-      this.audio = new AudioSink({ sampleRate: 44100, bufferSamples: 1024, volume: this.volume });
+      this.audio = new AudioSink({ sampleRate: 44100, bufferSamples: this.audioBufferSamples, volume: this.volume });
       const ok = await this.audio.start();
       if (!ok) {
         this.audio = null;

@@ -14,6 +14,7 @@ import {
 } from '@/lib/processing';
 import { Panel, SectionHeader, Spinner } from './primitives';
 import type { GameRecord } from '@/core/types';
+import { useModal } from '@/lib/use-modal';
 
 /**
  * Optional local processing panel.
@@ -173,29 +174,12 @@ export function ProcessingPanel({ game }: { game?: GameRecord }) {
       )}
 
       {confirming && game && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="dialog" aria-modal onClick={() => setConfirming(false)}>
-          <div className="panel w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold">Send this ROM to your local service?</h3>
-            <p className="mt-2 text-xs leading-relaxed text-ink-3">
-              This is the only action in Recompa that transmits file bytes. They go to{' '}
-              <span className="font-mono text-ink-2">{settings.externalProcessingEndpoint}</span> on this machine, are written to a
-              temporary directory, read as data by a native tool and deleted afterwards. Remote endpoints are refused, so nothing is
-              sent to us or to any third party.
-            </p>
-            <div className="mt-3 rounded-lg border border-line bg-black/25 p-2.5">
-              <div className="text-[11px] font-medium text-ink">{game.title}</div>
-              <div className="font-mono text-[10px] text-ink-4">{game.platformId.toUpperCase()} · {game.payloadId.slice(0, 16)}…</div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className="btn btn-sm" onClick={() => setConfirming(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-ice btn-sm" onClick={() => void send()}>
-                Send to {endpointLabel(settings.externalProcessingEndpoint)}
-              </button>
-            </div>
-          </div>
-        </div>
+        <SendConfirmDialog
+          game={game}
+          endpoint={settings.externalProcessingEndpoint}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void send()}
+        />
       )}
 
       <a
@@ -208,5 +192,59 @@ export function ProcessingPanel({ game }: { game?: GameRecord }) {
         dataset provenance
       </a>
     </Panel>
+  );
+}
+
+/**
+ * Explicit consent before the one action in Recompa that transmits file bytes.
+ * Separate component so the modal focus/Escape hook runs only while mounted.
+ */
+function SendConfirmDialog({
+  game,
+  endpoint,
+  onCancel,
+  onConfirm,
+}: {
+  game: GameRecord;
+  endpoint: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useModal(onCancel);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" onClick={onCancel}>
+      <div
+        ref={dialogRef}
+        className="panel w-full max-w-md p-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="processing-dialog-title"
+        tabIndex={-1}
+      >
+        <h3 id="processing-dialog-title" className="text-base font-semibold">
+          Send this ROM to your local service?
+        </h3>
+        <p className="mt-2 text-xs leading-relaxed text-ink-3">
+          This is the only action in Recompa that transmits file bytes. They go to{' '}
+          <span className="font-mono text-ink-2">{endpoint}</span> on this machine, are written to a temporary directory, read as
+          data by a native tool and deleted afterwards. Remote endpoints are refused, so nothing is sent to us or to any third party.
+        </p>
+        <div className="mt-3 rounded-lg border border-line bg-black/25 p-2.5">
+          <div className="text-[11px] font-medium text-ink">{game.title}</div>
+          <div className="font-mono text-[10px] text-ink-4">
+            {game.platformId.toUpperCase()} · {game.payloadId.slice(0, 16)}…
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-sm" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn btn-ice btn-sm" onClick={onConfirm}>
+            Send to {endpointLabel(endpoint)}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

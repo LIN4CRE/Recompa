@@ -1,14 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
+import { aspectRatioCss, computeStageSize, type ResolvedAspect, type VideoScaleSetting } from './layout';
 
 /**
  * The canvas host.
  *
- * Video sizing is CSS-driven: aspect ratio is enforced with `aspect-ratio`
- * and the canvas is scaled with `image-rendering: pixelated` so integer-ish
- * upscaling stays crisp. The canvas backing store is owned by the engine
- * (256×240 for NES, 240×160 for GBA) — never upscaled internally, which would
- * waste fill rate and blur pixels.
+ * Video sizing is CSS-driven: the aspect ratio is enforced with `aspect-ratio`
+ * and the canvas keeps `image-rendering: pixelated` so upscaling stays crisp.
+ * The canvas backing store is owned by the engine (256×240 for NES, 240×160 for
+ * GBA) — never upscaled internally, which would waste fill rate and blur
+ * pixels.
+ *
+ * The user's scaling choice is applied here rather than in the adapter, so
+ * switching it never restarts the emulator: `auto` fits the stage, `native`
+ * shows one canvas pixel per CSS pixel and `pixel-perfect` rounds down to the
+ * largest integer multiple that fits. The maths lives in `layout.ts` so it can
+ * be tested without a DOM.
  */
 export function EmulatorStage({
   canvasRef,
@@ -19,42 +26,49 @@ export function EmulatorStage({
   children,
 }: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
-  aspect: '4:3' | '16:9' | 'stretch' | 'native';
-  scale: number;
+  /** Already resolved from the user's setting and the platform (see `resolveAspect`). */
+  aspect: ResolvedAspect;
+  scale: VideoScaleSetting;
   filters: 'off' | 'scanlines' | 'smooth';
   playing: boolean;
   children?: React.ReactNode;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep the canvas centred with letterboxing; `scale` is a fractional zoom
-  // used by the resolution selector (0.75 / 1 / 1.5).
   useEffect(() => {
     const host = hostRef.current;
     const canvas = canvasRef.current;
     if (!host || !canvas) return;
+
     const apply = () => {
       const rect = host.getBoundingClientRect();
-      if (rect.width === 0) return;
-      canvas.style.maxWidth = '100%';
-      canvas.style.maxHeight = '100%';
-      canvas.style.width = `${Math.round(rect.width * scale)}px`;
-      canvas.style.height = '100%';
+      if (rect.width === 0 || rect.height === 0) return;
+      const size = computeStageSize(
+        scale,
+        { width: canvas.width, height: canvas.height },
+        { width: rect.width, height: rect.height },
+      );
+      if (size) {
+        canvas.style.width = `${size.width}px`;
+        canvas.style.height = `${size.height}px`;
+        canvas.style.maxWidth = 'none';
+        canvas.style.maxHeight = 'none';
+      } else {
+        // Fit mode: let the box size the canvas, keeping the pixel grid intact.
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
+      }
     };
+
     apply();
     const observer = new ResizeObserver(apply);
     observer.observe(host);
     return () => observer.disconnect();
   }, [canvasRef, scale]);
 
-  const aspectStyle =
-    aspect === '4:3'
-      ? '4 / 3'
-      : aspect === '16:9'
-        ? '16 / 9'
-        : aspect === 'stretch'
-          ? 'auto'
-          : 'native';
+  const aspectStyle = aspectRatioCss(aspect);
 
   return (
     <div
@@ -63,7 +77,7 @@ export function EmulatorStage({
         'relative flex items-center justify-center overflow-hidden rounded-lg border border-line bg-black',
         playing ? 'shadow-[0_0_0_1px_rgba(214,255,75,0.14),0_30px_90px_-50px_rgba(214,255,75,0.35)]' : '',
       )}
-      style={{ aspectRatio: aspectStyle === 'auto' ? undefined : aspectStyle, minHeight: '240px', maxHeight: 'calc(100dvh - 250px)' }}
+      style={{ aspectRatio: aspectStyle, minHeight: '240px', maxHeight: 'calc(100dvh - 250px)' }}
     >
       <canvas
         ref={canvasRef}

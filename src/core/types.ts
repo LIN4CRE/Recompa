@@ -295,6 +295,12 @@ export interface EngineRunOptions {
   canvas: HTMLCanvasElement;
   audio: boolean;
   volume: number;
+  /**
+   * Requested audio buffer in frames for cores that use a ScriptProcessorNode
+   * fallback (see `src/engines/audio.ts`). Adapters that render audio inside
+   * their own worklet ignore it rather than pretending to honour it.
+   */
+  audioBufferSamples?: number;
   /** Persisted SRAM (battery save) if the user has one. */
   savedSram?: Uint8Array | null;
   /** Region/format facts from the analysis report. */
@@ -599,8 +605,13 @@ export interface TestCheck {
 /* ------------------------------------------------------------------ */
 
 export interface AppSettings {
-  theme: 'obsidian';
-  videoScale: 'auto' | 'native' | 'pixel-perfect' | '1x' | '2x' | '3x';
+  /**
+   * 'auto' fits the stage, 'native' is one canvas pixel per CSS pixel and
+   * 'pixel-perfect' takes the largest integer multiple that fits.
+   * See `src/ui/player/layout.ts`.
+   */
+  videoScale: 'auto' | 'native' | 'pixel-perfect';
+  /** 'auto' resolves per platform in `resolveAspect()`. */
   aspect: 'auto' | '4:3' | '16:9' | 'stretch';
   filters: 'off' | 'scanlines' | 'smooth';
   audioEnabled: boolean;
@@ -612,16 +623,17 @@ export interface AppSettings {
   touchControls: 'auto' | 'on' | 'off';
   keybindings: Keybindings;
   gamepadDeadzone: number;
-  performanceMode: 'auto' | 'quality' | 'balanced' | 'speed';
+  /** Hold a Screen Wake Lock while a game is running. */
   keepScreenAwake: boolean;
-  /** Analyze immediately after drop. */
+  /** Analyse dropped files immediately; off = confirm before hashing. */
   autoAnalyze: boolean;
+  /** Keep ROM bytes in IndexedDB after analysis (required to play later). */
   storePayloads: boolean;
+  /** Keep save states in IndexedDB. */
   storeStates: boolean;
   testDurationSeconds: number;
   externalProcessingEndpoint: string;
   enableExternalProcessing: boolean;
-  telemetry: false;
 }
 
 export interface Keybindings {

@@ -128,7 +128,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="lg:pl-[232px]">
+      {/* Keyboard users would otherwise tab through every navigation item on
+          every page before reaching the content. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-md focus:border focus:border-line-bright focus:bg-panel focus:px-3 focus:py-1.5 focus:text-xs focus:text-ink"
+      >
+        Skip to content
+      </a>
+      <main id="main-content" tabIndex={-1} className="lg:pl-[232px]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
         <PageFooter />
       </main>

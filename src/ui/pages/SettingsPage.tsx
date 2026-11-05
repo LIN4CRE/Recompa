@@ -103,10 +103,16 @@ export function SettingsPage() {
               </select>
             </Field>
             <Toggle
-              label="Show FPS overlay"
-              description="Draws the measured frame rate on the video surface."
+              label="Show measured frame rate"
+              description="Shows the engine's measured fps and frame time in the player status line. The Performance panel always shows both."
               checked={settings.showFps}
               onChange={(v) => update({ showFps: v })}
+            />
+            <Toggle
+              label="Keep screen awake while playing"
+              description="Uses the Screen Wake Lock API. Unsupported browsers simply keep their normal display timeout."
+              checked={settings.keepScreenAwake}
+              onChange={(v) => update({ keepScreenAwake: v })}
             />
             <Toggle
               label="Enter fullscreen on launch"
@@ -147,8 +153,9 @@ export function SettingsPage() {
               </select>
             </Field>
             <p className="mt-1 font-mono text-[10px] leading-relaxed text-ink-4">
-              Effective latency ≈ {(settings.audioBufferSamples / 44.1).toFixed(1)} ms buffer + output device latency. Cross-origin
-              isolation changes the path to an AudioWorklet ring buffer.
+              {(settings.audioBufferSamples / 44.1).toFixed(1)} ms of buffering + output device latency. This size applies to the
+              ScriptProcessor fallback; when the page is cross-origin isolated the engine uses a fixed-capacity AudioWorklet ring
+              buffer instead.
             </p>
             <Field label="Touch controls">
               <select className="input" value={settings.touchControls} onChange={(e) => update({ touchControls: e.target.value as never })}>
@@ -213,7 +220,7 @@ export function SettingsPage() {
             />
             <Toggle
               label="Analyse immediately when a file is dropped"
-              description="Off = you confirm each file before hashing."
+              description="Off = dropped or chosen files wait for you to confirm before anything is read. Choosing “Scan a folder” is itself the confirmation, so a scan always runs."
               checked={settings.autoAnalyze}
               onChange={(v) => update({ autoAnalyze: v })}
             />
