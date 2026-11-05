@@ -53,6 +53,11 @@ Full findings, measurements and verification: `docs/AUDIT-2026-11-05-followup.md
 - Tests: `player-layout` (11), `storage-errors` (6), `use-modal` (6),
   `error-boundary` (4), `settings-wiring` (4), `library-storage-setting` (3), plus
   two Playwright tests that drive the new settings gates in a real browser.
+- `E2E_BASE_URL` in `playwright.config.ts` lets the suite run against a built
+  artefact instead of the dev server, so the hashed production bundle can be
+  exercised (`npm run build && npm run preview &`, then
+  `E2E_BASE_URL=http://127.0.0.1:4173 npm run test:e2e`). Verified: 7 passed,
+  1 skipped against `vite preview`.
 
 
 Audit and hardening pass, 5 November 2026. See `docs/AUDIT-2026-11-05.md` for

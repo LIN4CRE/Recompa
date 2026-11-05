@@ -107,3 +107,63 @@ file" path, both driven through the real settings UI and the real file input.
 The `settings-wiring` guard was mutation-tested: adding a `someUnwiredSetting`
 key to `AppSettings` makes it fail with that key named, and reverting restores
 green.
+
+---
+
+## E. Deployment
+
+Existing route, no new service and no cost: the GitHub-linked Vercel project
+`recompa` (`prj_eemTGGgieKKuY4Z5e4y6hSeMnHFt`), `npm ci` → `npm run build` →
+`dist`, Node 26.x, production branch `main`.
+
+| Step | Result |
+| --- | --- |
+| Branch push | `arena/0bf459c4-recompa` @ `530b3db`; Vercel's Git integration built a preview automatically |
+| Preview deployment | `dpl_9oDNPw9E86BkW71uLMbM2ekjQ6z9` — READY. Build log: `npm ci` audited 117 packages / 0 vulnerabilities, GPL core fetched (0.99 MiB), **2,161 modules transformed** — the same count as the local build |
+| Production deployment | `dpl_4fwUWZhJm58Gfd8RBdJJkuJ4sc85` — READY / **PROMOTED**, alias `recompa.vercel.app` assigned |
+| Rollback path | The previous production deployment (`dpl_DwDN5XmR3baEHrr5y4xAJwHFf3SP`, `0dcb657`) is retained and flagged `isRollbackCandidate` |
+
+**Production artefact tested, not just the dev server.** `playwright.config.ts`
+now accepts `E2E_BASE_URL`, so the suite can be pointed at a built bundle
+instead of Vite's development transform:
+
+```
+npm run build && npm run preview -- --port 4173 &
+E2E_BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+```
+
+Against `vite preview` that run is **7 passed, 1 skipped** — the skip being the
+PlayStation test, which imports TypeScript source modules by path and therefore
+cannot run against hashed bundles (now annotated in the test rather than left
+failing). The passing set includes booting jsnes from the minified bundle,
+measuring fps, save-state round trip, the verification harness, and both settings
+gates.
+
+**Live verification** (`https://recompa.vercel.app`, fetched after promotion):
+
+| Observed | Significance |
+| --- | --- |
+| "Skip to content" is the first element | Exists only in this build |
+| Settings → *Show measured frame rate*, *Keep screen awake while playing*, *Auto (per platform)*, and the corrected audio-buffer note | New copy from this build |
+| Device panel: `Cross-origin isolated: yes (SAB)`, `WebGL2: available` | COOP/COEP and the requester are served correctly at the edge |
+| Fingerprints 31,655; Live engines 3; FCEUmm card still says no payload is integrated | Unchanged, honest data paths |
+
+Limitation, stated rather than glossed: direct `curl` to `*.vercel.app` is
+blocked by this workspace's egress policy, so the live checks above went through
+a page renderer (which executes the app's JavaScript) rather than raw header
+dumps. The deployed route table was read back from the Vercel API and still
+carries COOP/COEP/CORP/CSP exactly as `vercel.json` specifies, and
+`tests/unit/security-headers.test.ts` holds those files in sync.
+
+### One follow-up for the owner
+
+`main` is still at `0dcb657`. This branch is open as **PR #15**; merging it keeps
+the Git production branch in step with what is being served. Nothing else is
+required — a merge to `main` produces a production deployment through the same
+integration.
+
+GitHub Actions remains blocked by the account, not by the workflow: `CI` and
+`CodeQL` are refused with *"The job was not started because your account is
+locked due to a billing issue."* The equivalent checks were executed locally
+(typecheck, 283 unit tests, build, 8 E2E, `npm audit`), and the production build
+was independently reproduced on Vercel's build machines from the same commit.

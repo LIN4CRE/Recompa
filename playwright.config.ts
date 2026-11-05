@@ -14,6 +14,17 @@ import { defineConfig, devices } from '@playwright/test';
  * docs/DEPLOYMENT.md §1.
  */
 const customChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() || undefined;
+/**
+ * Point the suite at an already-running server instead of the dev server, e.g.
+ * the production build:
+ *
+ *   npm run build && npm run preview &
+ *   E2E_BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+ *
+ * This exercises the hashed, minified bundles and the real COOP/COEP headers
+ * that ship, rather than Vite's development transform.
+ */
+const externalBaseUrl = process.env.E2E_BASE_URL?.trim() || undefined;
 const extraChromiumArgs = (process.env.PLAYWRIGHT_CHROMIUM_ARGS ?? '')
   .split(',')
   .map((flag) => flag.trim())
@@ -30,7 +41,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: externalBaseUrl ?? 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',
     // Video needs Playwright's bundled ffmpeg, which is not present when a
     // system Chromium is supplied via PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.
@@ -44,10 +55,13 @@ export default defineConfig({
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'npm run dev -- --port 5173 --strictPort',
-    url: 'http://127.0.0.1:5173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  // No webServer when the caller supplies a running server of their own.
+  webServer: externalBaseUrl
+    ? undefined
+    : {
+        command: 'npm run dev -- --port 5173 --strictPort',
+        url: 'http://127.0.0.1:5173',
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      },
 });

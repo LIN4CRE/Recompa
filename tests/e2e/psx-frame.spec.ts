@@ -9,6 +9,15 @@
  */
 import { expect, test } from '@playwright/test';
 
+// This test imports TypeScript source modules by path (`/src/...`), which only
+// the Vite dev server can serve — a production build ships hashed bundles. It is
+// therefore skipped when the suite is pointed at a built artefact with
+// E2E_BASE_URL; the same invariants remain covered there by the smoke suite.
+test.skip(
+  Boolean(process.env.E2E_BASE_URL),
+  'imports TypeScript source modules, which only the dev server serves',
+);
+
 test('EmulatorJS bootstrap frame mounts, runs its script and signals the parent', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
