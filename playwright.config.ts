@@ -6,7 +6,19 @@ import { defineConfig, devices } from '@playwright/test';
  * The suite runs against a real dev server on 127.0.0.1 so cross-origin
  * isolation headers (COOP/COEP) from vite.config.ts are exercised exactly as in
  * production.
+ *
+ * Browser acquisition is separate from the test logic. CI uses Playwright's own
+ * Chromium; in sandboxes where cdn.playwright.dev is unreachable, set
+ * PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to any Chromium binary (and optionally
+ * PLAYWRIGHT_CHROMIUM_ARGS as a comma-separated flag list). See
+ * docs/DEPLOYMENT.md §1.
  */
+const customChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() || undefined;
+const extraChromiumArgs = (process.env.PLAYWRIGHT_CHROMIUM_ARGS ?? '')
+  .split(',')
+  .map((flag) => flag.trim())
+  .filter(Boolean);
+
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',
@@ -20,9 +32,16 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    // Video needs Playwright's bundled ffmpeg, which is not present when a
+    // system Chromium is supplied via PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.
+    // Traces and failure screenshots remain available in that mode.
+    video: customChromium ? 'off' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     permissions: [],
+    launchOptions: {
+      ...(customChromium ? { executablePath: customChromium } : {}),
+      ...(extraChromiumArgs.length > 0 ? { args: extraChromiumArgs } : {}),
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

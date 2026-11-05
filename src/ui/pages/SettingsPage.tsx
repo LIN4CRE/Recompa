@@ -15,6 +15,7 @@ import { useSettings } from '@/state/settings';
 import { useLibrary } from '@/state/library';
 import { DEFAULT_KEYBINDINGS, RESERVED_CODES, type LogicalButton } from '@/engines/input';
 import { clearAllData, estimateStorage, exportBackup, importBackup, totalPayloadBytes } from '@/db/database';
+import { downloadBlob } from '@/lib/exports';
 import { bytes, Panel, SectionHeader, Tabs } from '../components/primitives';
 import { ProcessingPanel } from '../components/ProcessingPanel';
 import { detectEnvironment } from '@/core/environment';
@@ -225,12 +226,7 @@ export function SettingsPage() {
                 className="btn btn-sm"
                 onClick={async () => {
                   const blob = await exportBackup();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `recompa-backup-${new Date().toISOString().slice(0, 10)}.json`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  downloadBlob(blob, `recompa-backup-${new Date().toISOString().slice(0, 10)}.json`);
                 }}
               >
                 <Download className="size-3.5" /> Export backup

@@ -9,6 +9,7 @@ import type {
 } from '@/core/types';
 import { EMULATORJS_PSX_DESCRIPTOR } from '../descriptors';
 import { enginePrerequisiteBlockers } from '@/core/environment';
+import { mountBootstrapFrame } from './frame';
 
 /**
  * PlayStation 1 via EmulatorJS + pcsx_rearmed.
@@ -50,12 +51,14 @@ const DATA_PATH = '/cores/emulatorjs/data/';
  * global afterwards: `doc.write` executes scripts synchronously, so anything
  * set on the window after writing would arrive too late.
  */
-function bootstrapHtml(config: {
+export function bootstrapHtml(config: {
   gameName: string;
   gameUrl: string;
   biosUrl: string;
   dataPath: string;
   volume: number;
+  /** Origin the iframe is allowed to post status messages back to. */
+  parentOrigin: string;
 }): string {
   const json = JSON.stringify(config).replace(/</g, '\\u003c');
   return `<!doctype html>
@@ -72,6 +75,10 @@ function bootstrapHtml(config: {
   <script>
     (function () {
       var cfg = ${json};
+      // The frame inherits the app's origin. Posting to that exact origin (not
+      // '*') means a status message cannot be delivered to an unrelated window
+      // if the frame is ever navigated somewhere else.
+      var target = cfg.parentOrigin;
       // EmulatorJS reads these off the *iframe's* window.
       window.EJS_player = '#game';
       window.EJS_core = 'psx';
@@ -87,16 +94,21 @@ function bootstrapHtml(config: {
       window.EJS_disableDatabases = true;
       window.EJS_volume = cfg.volume;
 
-      window.EJS_ready = function () { parent.postMessage({ recompaPsx: 'ready' }, '*'); };
-      window.EJS_onGameStart = function () { parent.postMessage({ recompaPsx: 'start' }, '*'); };
+      window.EJS_ready = function () { parent.postMessage({ recompaPsx: 'ready' }, target); };
+      window.EJS_onGameStart = function () { parent.postMessage({ recompaPsx: 'start' }, target); };
 
       // Hand control back to the host, which attaches its listeners and then
-      // calls window.__recompaBoot() once the session exists.
-      parent.postMessage({ recompaPsx: 'booted' }, '*');
+      // calls window.__recompaBoot() once the session exists. postMessage is a
+      // task, so a listener attached synchronously after doc.write() receives it.
+      parent.postMessage({ recompaPsx: 'booted' }, target);
+      var booted = false;
       window.__recompaBoot = function () {
+        // Idempotent: a duplicated "booted" event must not load loader.js twice.
+        if (booted) return;
+        booted = true;
         var s = document.createElement('script');
         s.src = cfg.dataPath + 'loader.js';
-        s.onerror = function () { parent.postMessage({ recompaPsx: 'loaderror' }, '*'); };
+        s.onerror = function () { parent.postMessage({ recompaPsx: 'loaderror' }, target); };
         document.head.appendChild(s);
       };
     })();
@@ -375,27 +387,23 @@ export const EmulatorJsPsxAdapter: EngineAdapter = {
       objectUrls.push(biosUrl);
     }
 
-    const frame = document.createElement('iframe');
-    frame.setAttribute('title', 'PlayStation emulator');
-    frame.setAttribute('allow', 'autoplay; gamepad; fullscreen');
-    frame.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#000;';
-    frame.src = 'about:blank';
-
-    const doc = frame.contentDocument;
-    if (!doc) {
+    // The frame must be connected before its document is written (see frame.ts).
+    // If mounting fails, no session owns the blob URLs yet, so clean them up here.
+    const html = bootstrapHtml({
+      gameName,
+      gameUrl,
+      biosUrl,
+      dataPath: DATA_PATH,
+      volume: options.volume,
+      parentOrigin: window.location.origin,
+    });
+    let frame: HTMLIFrameElement;
+    try {
+      frame = mountBootstrapFrame(options.canvas, html);
+    } catch (error) {
       for (const url of objectUrls) URL.revokeObjectURL(url);
-      throw new Error('Could not create the emulator frame');
+      throw error;
     }
-    doc.open();
-    doc.write(
-      bootstrapHtml({ gameName, gameUrl, biosUrl, dataPath: DATA_PATH, volume: options.volume }),
-    );
-    doc.close();
-
-    // Replace the caller's canvas with the isolated frame.
-    const host = options.canvas.parentElement ?? document.body;
-    options.canvas.replaceWith(frame);
-    if (!frame.isConnected) host.appendChild(frame);
 
     const session = new EmulatorJsPsxSession(frame, callbacks, objectUrls, options.volume);
     callbacks.onLog?.('info', `PlayStation core starting (${gameName})`);

@@ -10,14 +10,20 @@
  *
  * It is intentionally browser-agnostic: install any of chromium/firefox/webkit.
  */
-import { expect, test } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { expect, test, type Page } from '@playwright/test';
 import { buildTestRom, TEST_ROM_NAME } from '../../src/core/testrom';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-
 test.describe.configure({ mode: 'serial' });
+
+/**
+ * Playwright creates a fresh browser context — and therefore a fresh IndexedDB —
+ * for every test. A test that needs a library entry must seed it through the
+ * app's own self-test intake path rather than depending on a previous test.
+ */
+async function seedSelfTestGame(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /Self-test engine/i }).first().click();
+  await expect(page).toHaveURL(/#\/game\//, { timeout: 30_000 });
+}
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => {
@@ -54,7 +60,10 @@ test('self-test cartridge: analyse, launch, measure and save state', async ({ pa
   // Launch the player.
   await page.getByRole('button', { name: /^Play$/i }).first().click();
   await expect(page).toHaveURL(/#\/play\//, { timeout: 15_000 });
-  await expect(page.getByText(/jsnes/i).first()).toBeVisible({ timeout: 20_000 });
+  // The player header shows the method badge once a real session exists.
+  // It reads "JS emulation" for jsnes; the literal string "jsnes" is not
+  // rendered in the player. A visible badge proves adapter.create() resolved.
+  await expect(page.getByText(/JS emulation/i).first()).toBeVisible({ timeout: 20_000 });
 
   // The engine must actually produce frames: the header shows measured fps.
   const status = page.locator('header').first();
@@ -95,12 +104,20 @@ test('self-test cartridge: analyse, launch, measure and save state', async ({ pa
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/png$/);
 
+  // A screenshot also opens a preview dialog. Closing it revokes the preview's
+  // blob URL and unblocks the rest of the player controls.
+  const preview = page.getByRole('dialog');
+  await expect(preview).toBeVisible();
+  await preview.getByRole('button', { name: /^Close$/i }).click();
+  await expect(preview).toHaveCount(0);
+
   // Verification harness runs and records real checks.
   await page.getByRole('button', { name: /^Verify$/i }).click();
   await expect(page.getByText(/Verification:/i)).toBeVisible({ timeout: 60_000 });
 });
 
 test('library shows the analysed game with its real engine', async ({ page }) => {
+  await seedSelfTestGame(page);
   await page.getByRole('link', { name: /Library/i }).or(page.getByRole('button', { name: /^Library$/i })).first().click();
   await expect(page).toHaveURL(/#\/library/);
   const card = page.locator('article').filter({ hasText: /recompa-selftest/i }).first();
@@ -109,6 +126,15 @@ test('library shows the analysed game with its real engine', async ({ page }) =>
 });
 
 test('compatibility database lists measured results', async ({ page }) => {
+  // Produce a real measured result first: launch the self-test cartridge and
+  // run the verification harness. Nothing here is seeded as fake data.
+  await seedSelfTestGame(page);
+  await page.getByRole('button', { name: /^Play$/i }).first().click();
+  await expect(page.getByText(/JS emulation/i).first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: /^Verify$/i }).click();
+  await expect(page.getByText(/Verification:/i)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: /^Exit game$/i }).click();
+
   await page.getByRole('button', { name: /^Compatibility$/i }).first().click();
   await expect(page).toHaveURL(/#\/compatibility/);
   await expect(page.getByText(/fingerprints/i).first()).toBeVisible();
@@ -125,8 +151,12 @@ test('unknown file produces a technical error, never a fake platform', async ({ 
     mimeType: 'application/octet-stream',
     buffer: Buffer.from([0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8]),
   });
-  // It still creates a report entry, but the report must say "unidentified".
+  // It still creates a report entry, but the report must state plainly that
+  // nothing was identified and must not offer any execution method.
   await expect(page).toHaveURL(/#\/game\//, { timeout: 20_000 });
-  await expect(page.getByText(/Unrecognised file|no platform could be verified|format not recognised/i).first()).toBeVisible();
+  await expect(page.getByText('not identified', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/No supported console format matched this file/i).first()).toBeVisible();
+  await expect(page.getByText(/No runnable execution path/i).first()).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Execution methods 0/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Not runnable|Nothing to launch/i })).toBeDisabled();
 });

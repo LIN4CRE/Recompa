@@ -61,7 +61,7 @@ const ATTRIBUTION = [
   {
     name: 'REA (morluto/rea)',
     licence: 'MIT',
-    use: 'Optional agent-assisted reverse-engineering assistant, invoked only by the local processing service.',
+    use: 'Audited as a reverse-engineering assistant. Not integrated or bundled with Recompa.',
     url: 'https://github.com/morluto/rea',
   },
 ];

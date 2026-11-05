@@ -30,6 +30,7 @@ import { bytes, CompatBadge, MethodBadge, Spinner } from '../components/primitiv
 import { navigate } from '@/lib/router';
 import { runVerification } from '@/core/verification';
 import { platformNeedsBios, readBiosBytes } from '@/core/bios';
+import { downloadBlob } from '@/lib/exports';
 
 const NES_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'START', 'SELECT'];
 const GBA_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'L', 'R', 'START', 'SELECT'];
@@ -68,6 +69,18 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const emulator = useEmulator();
+  // `useEmulator()` returns a fresh object on every render. Effects must depend
+  // on its *stable* members (`start`, `stop`, `actions` are memoised). Depending
+  // on the whole object made the teardown effect below run on every render and
+  // abort the session immediately after `start()` created it — the player then
+  // sat on "Loading core…" with status `stopped` forever.
+  const {
+    start: startEmulator,
+    stop: stopEmulator,
+    actions: emulatorActions,
+  } = emulator;
+  const playerStatusRef = useRef(emulator.status);
+  playerStatusRef.current = emulator.status;
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -75,6 +88,9 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
   const [states, setStates] = useState<SaveStateRecord[]>([]);
   const [savingState, setSavingState] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
+  // The preview <img> needs its object URL for as long as it is shown; revoke it
+  // on close, on replacement and on unmount so screenshots do not leak blobs.
+  const captureUrlRef = useRef<string | null>(null);
   const startedRef = useRef(false);
   const sessionStartRef = useRef<number>(0);
   const keyboardRef = useRef<KeyboardInput | null>(null);
@@ -119,7 +135,7 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       }
     }
     sessionStartRef.current = Date.now();
-    await emulator.start({
+    await startEmulator({
       engineId: engineId as string,
       rom,
       fileName: game.title.replace(/[^\w.\- ]+/g, '_') + extensionFor(game.platformId),
@@ -134,12 +150,20 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
         if (status === 'running') void recordPlay(game.id, engineId as string, 0);
       },
     });
-  }, [audioOn, emulator, engineId, game.id, game.platformId, game.title, loadRom, loadSram, recordPlay, saveSram, settings.volume]);
+  }, [audioOn, startEmulator, engineId, game.id, game.platformId, game.title, loadRom, loadSram, recordPlay, saveSram, settings.volume]);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     void boot();
+    return () => {
+      // React 19 StrictMode mounts, unmounts and re-mounts effects in
+      // development. The simulated unmount aborts the first boot (useEmulator
+      // tears the session down), so the second mount must be allowed to boot
+      // again. Without this reset the player stays on "Loading core…" forever
+      // in `npm run dev` and in the Playwright suite.
+      startedRef.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -156,9 +180,9 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
     const keyboard = new KeyboardInput(
       settings.keybindings,
       (event) => {
-        if (emulator.status === 'paused') return;
+        if (playerStatusRef.current === 'paused') return;
         const mapped = mapButton(engineId as string, event.button);
-        if (mapped) emulator.actions.input(event.button, event.pressed);
+        if (mapped) emulatorActions.input(event.button, event.pressed);
       },
       window,
       shouldIgnore,
@@ -166,8 +190,8 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
     keyboardRef.current = keyboard;
 
     const gamepad = new GamepadInput((event) => {
-      if (emulator.status === 'paused') return;
-      emulator.actions.input(event.button, event.pressed);
+      if (playerStatusRef.current === 'paused') return;
+      emulatorActions.input(event.button, event.pressed);
     }, settings.gamepadDeadzone);
     gamepadRef.current = gamepad;
     let raf = 0;
@@ -184,7 +208,7 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
     const onVisibility = () => {
       if (document.hidden) {
         onBlur();
-        emulator.actions.pause();
+        emulatorActions.pause();
       }
     };
     window.addEventListener('blur', onBlur);
@@ -197,7 +221,7 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [emulator, engineId, settings.keybindings, settings.gamepadDeadzone]);
+  }, [emulatorActions, engineId, settings.keybindings, settings.gamepadDeadzone]);
 
   useEffect(() => {
     keyboardRef.current?.setBindings(settings.keybindings);
@@ -219,15 +243,33 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
         void recordPlay(game.id, engineId as string, seconds);
         sessionStartRef.current = 0;
       }
-      void emulator.stop();
+      void stopEmulator();
     };
-  }, [emulator, engineId, game.id, recordPlay]);
+  }, [stopEmulator, engineId, game.id, recordPlay]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (captureUrlRef.current) {
+        URL.revokeObjectURL(captureUrlRef.current);
+        captureUrlRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const closeCapture = () => {
+    if (captureUrlRef.current) {
+      URL.revokeObjectURL(captureUrlRef.current);
+      captureUrlRef.current = null;
+    }
+    setCapture(null);
+  };
 
   useEffect(() => {
     void listStates(game.id).then(setStates);
@@ -248,13 +290,13 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       pushToast({ kind: 'warning', title: 'Screenshot failed', message: 'This engine could not read back the video surface.' });
       return;
     }
-    const url = URL.createObjectURL(blob);
-    setCapture(url);
-    // Also save a durable copy to the user's downloads.
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${sanitize(game.title)}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
-    a.click();
+    // The download owns its own short-lived blob URL; the preview owns a
+    // separate one that lives until the dialog is closed.
+    downloadBlob(blob, `${sanitize(game.title)}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`);
+    if (captureUrlRef.current) URL.revokeObjectURL(captureUrlRef.current);
+    const previewUrl = URL.createObjectURL(blob);
+    captureUrlRef.current = previewUrl;
+    setCapture(previewUrl);
     // Offer it as cover art if none is set yet.
     if (!game.cover) {
       const reader = new FileReader();
@@ -557,7 +599,7 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
         </div>
       )}
 
-      {capture && <ScreenshotPreview url={capture} onClose={() => setCapture(null)} />}
+      {capture && <ScreenshotPreview url={capture} onClose={closeCapture} />}
       {verification.summary && (
         <div className="pointer-events-none fixed bottom-3 left-1/2 z-40 -translate-x-1/2 rounded-lg border border-line-bright bg-panel/95 px-3 py-1.5 font-mono text-[10px] text-ink-2 shadow-xl">
           {verification.summary}

@@ -18,7 +18,6 @@
     "test:e2e": "playwright test",
     "fetch:dat": "node scripts/fetch-dats.mjs",
     "check:dat": "node scripts/fetch-dats.mjs --check",
-    "fetch:testroms": "node scripts/fetch-test-roms.mjs",
     "fetch:emulatorjs": "node scripts/fetch-emulatorjs.mjs",
     "serve:processing": "node server/processing-service.mjs",
     "licenses": "node scripts/collect-licenses.mjs",

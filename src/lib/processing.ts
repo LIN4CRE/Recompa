@@ -30,22 +30,52 @@ export class ProcessingError extends Error {
   }
 }
 
-function baseUrl(settings: AppSettings): string {
-  const raw = settings.externalProcessingEndpoint.trim().replace(/\/$/, '');
-  if (!raw) throw new ProcessingError('No processing endpoint configured.', 'unavailable');
+/** Hostnames that resolve to the machine running the browser. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+/**
+ * Validate and parse the configured endpoint.
+ *
+ * Recompa only ever sends ROM bytes to a service on the user's own machine.
+ * This is enforced in the client as well as in the CSP: a remote endpoint is
+ * blocked by `connect-src` on the deployed site anyway, and allowing one here
+ * would contradict the confirmation dialog's promise that nothing goes to a
+ * third party. Operators who need a remote service reach it through an SSH
+ * tunnel or an authenticated local reverse proxy (see docs/DEPLOYMENT.md §4),
+ * which still presents as a loopback endpoint to the browser.
+ */
+export function processingEndpoint(raw: string): URL {
+  const value = raw.trim().replace(/\/$/, '');
+  if (!value) throw new ProcessingError('No processing endpoint configured.', 'unavailable');
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(value);
   } catch {
-    throw new ProcessingError(`"${raw}" is not a valid URL.`, 'bad-request');
+    throw new ProcessingError(`"${value}" is not a valid URL.`, 'bad-request');
   }
-  // Only loopback endpoints are allowed by default: this prevents a
-  // configuration mistake from quietly shipping ROMs to a third party.
-  const isLoopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname);
-  if (!isLoopback && url.protocol !== 'https:') {
-    throw new ProcessingError('Remote endpoints must use HTTPS.', 'bad-request');
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new ProcessingError('Processing endpoints must use http or https.', 'bad-request');
   }
-  return url.toString().replace(/\/$/, '');
+  if (!LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new ProcessingError(
+      `Only loopback endpoints are allowed (localhost, 127.0.0.1 or [::1]). "${url.hostname}" would send ROM bytes to another machine; use an SSH tunnel or a local reverse proxy instead.`,
+      'bad-request',
+    );
+  }
+  return url;
+}
+
+/** Human-readable host for the confirmation dialog; never throws during render. */
+export function endpointLabel(raw: string): string {
+  try {
+    return new URL(raw).host || 'local service';
+  } catch {
+    return raw.trim() || 'local service';
+  }
+}
+
+function baseUrl(settings: AppSettings): string {
+  return processingEndpoint(settings.externalProcessingEndpoint).toString().replace(/\/$/, '');
 }
 
 export function isProcessingAvailable(settings: AppSettings): boolean {

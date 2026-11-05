@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { Activity, ChevronRight, FileDown, Layers, ListChecks } from 'lucide-react';
 import { useLibrary } from '@/state/library';
 import { useNavigate } from '@/lib/router';
+import { downloadBlob } from '@/lib/exports';
 import { EmptyState, MethodBadge, Panel, relativeTime, SectionHeader, Tabs } from '../components/primitives';
 import { StageTimeline } from '../components/report-bits';
 import type { Job } from '@/core/types';
@@ -35,12 +36,7 @@ export function JobsPage() {
     const game = games.find((g) => g.id === job.gameId);
     const payload = { ...job, gameTitle: game?.title ?? null, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `recompa-job-${job.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `recompa-job-${job.id}.json`);
   };
 
   return (

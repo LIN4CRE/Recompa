@@ -43,7 +43,7 @@ Recompa distributes **no game ROMs, BIOS images, firmware or commercial game ass
 | [EmulatorJS](https://github.com/EmulatorJS/EmulatorJS) | GPL-3.0 | Browser emulator runtime. Powers the PlayStation adapter. Never committed; unpacked into `public/cores/emulatorjs` by `scripts/setup-emulatorjs.mjs` from SHA-1-pinned npm tarballs. |
 | [pcsx_rearmed (EmulatorJS build)](https://github.com/EmulatorJS/pcsx_rearmed) | GPL-2.0 | PlayStation 1 libretro core, shipped as WebAssembly. Not committed; fetched at build time alongside EmulatorJS. |
 | [N64Recomp / N64ModernRuntime / Zelda64Recomp](https://github.com/N64Recomp/N64Recomp) | MIT (tool) / GPL-3.0 (runtime) | Audited and referenced for the static-recompilation ladder. No source or binary is vendored or redistributed here. |
-| [REA (morluto/rea)](https://github.com/morluto/rea) | MIT | Optional agent-assisted reverse-engineering assistant, invoked only by the local processing service when configured. |
+| [REA (morluto/rea)](https://github.com/morluto/rea) | MIT | Researched during the technology audit. Not integrated, not vendored and not invoked by Recompa. |
 | [Ghidra / Rizin](https://github.com/rizinorg/rizin) | Apache-2.0 / LGPL-3.0 | Native reverse-engineering tools used only by the optional local processing service. Not distributed with Recompa. |
 
 ## Notes on specific licences

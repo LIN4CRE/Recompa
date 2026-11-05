@@ -107,10 +107,9 @@ export const EMULATORJS_DESCRIPTOR: EngineDescriptor = {
   performanceNotes:
     'Libretro FCEUmm compiled to WebAssembly. Broader mapper coverage than jsnes and uses WebGL for presentation (NetPlay/RetroArch video path).',
   assetPath: '/cores/emulatorjs',
-  installHint: 'npm run fetch:emulatorjs',
   available: false,
   unavailableReason:
-    'Not installed in this deployment. Run `npm run fetch:emulatorjs` to download the pinned EmulatorJS build (GPL-3.0) into public/cores/emulatorjs.',
+    'No FCEUmm payload and no NES adapter are integrated in this release. The optional GPL setup installs the PlayStation core only; NES games run on the built-in jsnes core.',
   limitations: [
     'Licensed GPL-3.0: if you serve it, you must offer the corresponding source (the fetch script records the exact upstream commit).',
     'Requires its own loader/data tree and cross-origin isolation is not required.',

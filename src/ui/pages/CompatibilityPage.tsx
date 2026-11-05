@@ -435,8 +435,8 @@ function ProjectsTab() {
               Agent-assisted reverse engineering with a TypeScript/Node toolchain and MCP plugins. MIT licensed.
             </p>
             <p className="mt-1 text-[10px] leading-relaxed text-amber/80">
-              Used as an optional <em>analysis assistant</em> via the local processing service, never as a ROM converter. It needs an
-              LLM provider key and a real model, so it is disabled unless you configure both.
+              Researched during the technology audit, but <em>not integrated</em>: no Recompa endpoint or job invokes it. Listed
+              here for attribution only — there is no setting to enable it and no ROM-conversion capability.
             </p>
           </div>
           <div className="rounded-lg border border-line bg-black/20 p-2.5">

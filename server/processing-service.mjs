@@ -7,8 +7,7 @@
  * cannot run in a browser sandbox:
  *
  *   • Ghidra headless / Rizin disassembly and symbol-map extraction,
- *   • N64Recomp job preparation (emitting the exact CLI the user runs locally),
- *   • REA agent-assisted analysis (only when a provider + model are configured).
+ *   • N64Recomp job preparation (emitting the exact CLI the user runs locally).
  *
  * Security posture:
  *   • binds to 127.0.0.1 by default and refuses to start on a public interface
@@ -48,9 +47,7 @@ const ALLOWED_ORIGINS = new Set(
 
 const GHIDRA_HEADLESS = process.env.GHIDRA_HEADLESS || '';
 const RIZIN_BIN = process.env.RIZIN_BIN || '';
-const REA_CLI = process.env.REA_CLI || '';
-const REA_MODEL = process.env.REA_MODEL || '';
-const REA_API_KEY = process.env.REA_API_KEY || '';
+const N64RECOMP_BIN = process.env.N64RECOMP_BIN || '';
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -150,22 +147,13 @@ async function capabilities() {
     tools: {
       ghidra: { ...ghidra, path: GHIDRA_HEADLESS || null, sdk: 'headless analyzer' },
       rizin: { ...rizin, path: RIZIN_BIN || null },
-      rea: {
-        configured: Boolean(REA_CLI && REA_MODEL && REA_API_KEY),
-        reason: !REA_CLI
-          ? 'REA_CLI not set'
-          : !REA_MODEL
-            ? 'REA_MODEL not set'
-            : !REA_API_KEY
-              ? 'REA_API_KEY not set (agent runs require a provider key)'
-              : null,
-        path: REA_CLI || null,
-        model: REA_MODEL || null,
-      },
+      // Only tools with a real job endpoint are reported. An earlier version
+      // listed an "rea" assistant here based on env vars that no endpoint ever
+      // consumed; that looked like a configured integration but was not one.
       n64recomp: {
-        configured: Boolean(process.env.N64RECOMP_BIN),
-        reason: process.env.N64RECOMP_BIN ? null : 'N64RECOMP_BIN not set',
-        path: process.env.N64RECOMP_BIN || null,
+        configured: Boolean(N64RECOMP_BIN),
+        reason: N64RECOMP_BIN ? null : 'N64RECOMP_BIN not set',
+        path: N64RECOMP_BIN || null,
       },
     },
     privacy: {
@@ -247,7 +235,7 @@ async function analyseStructure(body) {
  * prerequisites it will fail without. Never claims the job ran.
  */
 function n64recompPlan(body) {
-  const bin = process.env.N64RECOMP_BIN;
+  const bin = N64RECOMP_BIN;
   const input = sanitizeName(body?.filename || 'game.z64');
   const lines = [
     '# N64Recomp is a native C++ tool. Run this on your own machine:',
@@ -349,7 +337,6 @@ server.listen(PORT, HOST, async () => {
   console.log(`\nRecompa processing service listening on http://${HOST}:${PORT}`);
   console.log(`  ghidra     ${fmt(caps.tools.ghidra)}`);
   console.log(`  rizin      ${fmt(caps.tools.rizin)} (needed for /jobs/analyse-structure)`);
-  console.log(`  rea        ${fmt(caps.tools.rea)}`);
   console.log(`  n64recomp  ${fmt(caps.tools.n64recomp)}`);
   console.log(`  origins    ${[...ALLOWED_ORIGINS].join(', ')}`);
   console.log('  This service is optional; the browser app runs fully without it.\n');
