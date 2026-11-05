@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { useLibrary } from '@/state/library';
 import { analyzeBytes } from '@/core/analyze';
+import { describeStorageError } from '@/lib/storage-errors';
+import { useSettings } from '@/state/settings';
 import { inspectArchive } from '@/lib/zip';
 import { resolveDiscSets, type DroppedFile, type DiscSet } from '@/core/discset';
 import {
@@ -31,7 +33,7 @@ import { listWatchedFolders, putWatchedFolder, deleteWatchedFolder, type Watched
 import { buildDiscArchive, needsArchive } from '@/engines/psx/discArchive';
 import { formatBytes } from '@/core/binary';
 import type { AnalysisReport, GameRecord, Job } from '@/core/types';
-import { Spinner } from './primitives';
+import { Panel, Spinner } from './primitives';
 
 export interface UploadResult {
   report: AnalysisReport;
@@ -75,6 +77,11 @@ export function Uploader({
   const [folders, setFolders] = useState<WatchedFolderRecord[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanSummary, setScanSummary] = useState<string | null>(null);
+  // Files held back when "Analyse immediately when a file is dropped" is off.
+  // Nothing is read or hashed until the user confirms, which is what the
+  // setting promises.
+  const [pending, setPending] = useState<File[] | null>(null);
+  const autoAnalyze = useSettings((s) => s.settings.autoAnalyze);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFiles = useCallback(
@@ -206,7 +213,7 @@ export function Uploader({
         } catch (error) {
           failures.push({
             file: set.entry,
-            message: error instanceof Error ? error.message : String(error),
+            message: describeStorageError(error) ?? (error instanceof Error ? error.message : String(error)),
           });
         }
       }
@@ -274,22 +281,40 @@ export function Uploader({
             });
           }
         } catch (error) {
-          failures.push({ file: file.name, message: error instanceof Error ? error.message : String(error) });
+          failures.push({
+            file: file.name,
+            message: describeStorageError(error) ?? (error instanceof Error ? error.message : String(error)),
+          });
         }
       }
     },
     [addReport, onComplete, pushToast],
   );
 
+  /**
+   * Single entry point for every intake route (drop, picker, folder scan,
+   * clipboard). With `autoAnalyze` off the files are parked and the user
+   * confirms before any byte is read.
+   */
+  const intake = useCallback(
+    (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      if (autoAnalyze) void handleFiles(list);
+      else setPending(list);
+    },
+    [autoAnalyze, handleFiles],
+  );
+
   useEffect(() => {
     if (!autoStart) return;
     const onPaste = (event: ClipboardEvent) => {
       const files = event.clipboardData?.files;
-      if (files && files.length) void handleFiles(files);
+      if (files && files.length) intake(files);
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [autoStart, handleFiles]);
+  }, [autoStart, intake]);
 
   /* ------------------------- folder scanning ------------------------- */
 
@@ -375,7 +400,10 @@ export function Uploader({
             archive: archiveMeta,
           });
         } catch (error) {
-          failures.push({ file: label, message: error instanceof Error ? error.message : String(error) });
+          failures.push({
+            file: label,
+            message: describeStorageError(error) ?? (error instanceof Error ? error.message : String(error)),
+          });
         }
       }
 
@@ -527,7 +555,7 @@ export function Uploader({
             const root = files[0]!.relativePath.split('/')[0]!;
             await runScan({ files, name: root });
           } else {
-            await handleFiles(files.map((f) => f.file));
+            intake(files.map((f) => f.file));
           }
         } finally {
           setScanning(false);
@@ -535,7 +563,7 @@ export function Uploader({
       })();
       return;
     }
-    if (dt.files?.length) void handleFiles(dt.files);
+    if (dt.files?.length) intake(dt.files);
   };
 
   return (
@@ -616,7 +644,7 @@ export function Uploader({
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  if (event.target.files) void handleFiles(event.target.files);
+                  if (event.target.files) intake(event.target.files);
                   event.target.value = '';
                 }}
               />
@@ -706,6 +734,44 @@ export function Uploader({
             ))}
           </ul>
         </div>
+      )}
+
+      {pending && pending.length > 0 && !busy && (
+        <Panel className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold">
+                {pending.length} file{pending.length === 1 ? '' : 's'} ready to analyse
+              </h2>
+              <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-ink-3">
+                Nothing has been read or hashed yet — “Analyse immediately when a file is dropped” is off in Settings → Data
+                &amp; storage. Confirming runs the same local analysis as usual.
+              </p>
+              <p className="mt-1 truncate font-mono text-[10px] text-ink-4">
+                {pending
+                  .slice(0, 4)
+                  .map((f) => f.name)
+                  .join(' · ')}
+                {pending.length > 4 ? ` · +${pending.length - 4} more` : ''}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  const files = pending;
+                  setPending(null);
+                  if (files) void handleFiles(files);
+                }}
+              >
+                Analyse {pending.length} file{pending.length === 1 ? '' : 's'}
+              </button>
+              <button className="btn btn-sm" onClick={() => setPending(null)}>
+                <X className="size-3.5" /> Clear
+              </button>
+            </div>
+          </div>
+        </Panel>
       )}
 
       {errors.length > 0 && (

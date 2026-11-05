@@ -14,6 +14,7 @@ import {
   listJobs,
 } from '@/db/database';
 import { plan } from '@/core/planner';
+import { settingsSnapshot } from '@/state/settings';
 import { biosStatus, platformNeedsBios } from '@/core/bios';
 import { detectEnvironment } from '@/core/environment';
 import { fetchInstalledEngines } from '@/engines/install-check';
@@ -85,7 +86,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       const duplicate = existing ?? null;
 
       await putReport(report);
-      await putPayload(payload, report.checksums.sha256);
+      // Honour the storage setting: with "Store ROM bytes after analysis" off,
+      // the report and plan are still kept but the payload is not written. The
+      // game then reports honestly that it cannot be launched until the file is
+      // re-added (see GamePage/Player boot).
+      const prefersPayloads = settingsSnapshot().storePayloads;
+      if (prefersPayloads) await putPayload(payload, report.checksums.sha256);
 
       const now = Date.now();
       const game: GameRecord = duplicate

@@ -21,6 +21,7 @@ import {
 import type { AnalysisReport, GameRecord, SaveStateRecord } from '@/core/types';
 import { useEmulator, mapButton } from './useEmulator';
 import { EmulatorStage } from './EmulatorStage';
+import { resolveAspect } from './layout';
 import { TouchControls } from './TouchControls';
 import { useSettings } from '@/state/settings';
 import { useLibrary } from '@/state/library';
@@ -31,6 +32,8 @@ import { navigate } from '@/lib/router';
 import { runVerification } from '@/core/verification';
 import { platformNeedsBios, readBiosBytes } from '@/core/bios';
 import { downloadBlob } from '@/lib/exports';
+import { useModal } from '@/lib/use-modal';
+import { describeStorageError } from '@/lib/storage-errors';
 
 const NES_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'START', 'SELECT'];
 const GBA_BUTTONS: LogicalButton[] = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'L', 'R', 'START', 'SELECT'];
@@ -81,6 +84,8 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
   } = emulator;
   const playerStatusRef = useRef(emulator.status);
   playerStatusRef.current = emulator.status;
+  // Derived early: the wake-lock and fullscreen effects below depend on it.
+  const playing = emulator.status === 'running' || emulator.status === 'paused';
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -108,6 +113,26 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
     if (game.platformId === 'psx') return PSX_BUTTONS;
     return NES_BUTTONS;
   }, [game.platformId]);
+
+  /* --------------------------- fullscreen -------------------------- */
+  // Declared before `boot` because the boot callback depends on
+  // `enterFullscreen` for the "enter fullscreen on launch" setting.
+
+  const enterFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) return;
+    const shell = shellRef.current;
+    if (!shell?.requestFullscreen) throw new Error('This browser does not expose the Fullscreen API.');
+    await shell.requestFullscreen({ navigationUI: 'hide' });
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await enterFullscreen();
+    } catch (err) {
+      pushToast({ kind: 'warning', title: 'Fullscreen unavailable', message: (err as Error).message });
+    }
+  };
 
   /* ----------------------------- boot ----------------------------- */
   const boot = useCallback(async () => {
@@ -144,13 +169,36 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
       bios,
       audio: audioOn,
       volume: settings.volume,
+      audioBufferSamples: settings.audioBufferSamples,
       onSram: (sramBytes) => void saveSram(game.id, engineId as string, sramBytes),
-      onReady: () => setReady(true),
+      onReady: () => {
+        setReady(true);
+        // Fullscreen can only be requested from a user gesture; the click that
+        // started playback is often still within the transient-activation
+        // window, but never guaranteed. A rejection is expected on some
+        // browsers and is deliberately silent — the toolbar button remains.
+        if (settings.autoFullscreen) void enterFullscreen().catch(() => undefined);
+      },
       onStatus: (status) => {
         if (status === 'running') void recordPlay(game.id, engineId as string, 0);
       },
     });
-  }, [audioOn, startEmulator, engineId, game.id, game.platformId, game.title, loadRom, loadSram, recordPlay, saveSram, settings.volume]);
+  }, [
+    audioOn,
+    startEmulator,
+    engineId,
+    game.id,
+    game.platformId,
+    game.title,
+    loadRom,
+    loadSram,
+    recordPlay,
+    saveSram,
+    settings.volume,
+    settings.audioBufferSamples,
+    settings.autoFullscreen,
+    enterFullscreen,
+  ]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -170,6 +218,45 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
   useEffect(() => {
     if (emulator.error) setError(emulator.error);
   }, [emulator.error]);
+
+  /* --------------------------- wake lock -------------------------- */
+  // Screen Wake Lock keeps a handheld from dimming mid-level. Only held while
+  // a game is actually running and the setting is on; browsers drop the lock
+  // whenever the tab is hidden, so it is re-acquired on return.
+  useEffect(() => {
+    if (!settings.keepScreenAwake || !playing) return;
+    const wakeLock = (navigator as Navigator & {
+      wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinel> };
+    }).wakeLock;
+    if (!wakeLock) return;
+
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        const lock = await wakeLock.request('screen');
+        if (cancelled || document.visibilityState !== 'visible') {
+          void lock.release().catch(() => undefined);
+          return;
+        }
+        sentinel = lock;
+      } catch {
+        // Denied (permissions policy, low battery, hidden tab). The game still
+        // runs; the OS simply applies its normal display timeout.
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && !sentinel) void acquire();
+    };
+    void acquire();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (sentinel && !sentinel.released) void sentinel.release().catch(() => undefined);
+      sentinel = null;
+    };
+  }, [playing, settings.keepScreenAwake]);
 
   /* --------------------- input wiring ---------------------------- */
   useEffect(() => {
@@ -275,15 +362,6 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
     void listStates(game.id).then(setStates);
   }, [game.id]);
 
-  const toggleFullscreen = async () => {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await shellRef.current?.requestFullscreen({ navigationUI: 'hide' });
-    } catch (err) {
-      pushToast({ kind: 'warning', title: 'Fullscreen unavailable', message: (err as Error).message });
-    }
-  };
-
   const doScreenshot = async () => {
     const blob = await emulator.actions.screenshot();
     if (!blob) {
@@ -323,7 +401,25 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
         thumbnail,
         bytes: state,
       };
-      await putState(record);
+      if (!settings.storeStates) {
+        pushToast({
+          kind: 'warning',
+          title: 'Save states are switched off',
+          message: 'Settings → Data & storage keeps states from being written. Turn “Store save states” on to keep this one.',
+        });
+        return;
+      }
+      try {
+        await putState(record);
+      } catch (err) {
+        const storage = describeStorageError(err);
+        pushToast({
+          kind: 'error',
+          title: storage ? 'Not enough local storage' : 'Save state failed',
+          message: storage ?? (err instanceof Error ? err.message : String(err)),
+        });
+        return;
+      }
       setStates(await listStates(game.id));
       pushToast({ kind: 'success', title: 'Save state stored', message: `${bytes(state.length)} saved locally.` });
     } finally {
@@ -383,7 +479,6 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
 
   const fps = emulator.stats?.fps ?? 0;
   const touchEnabled = settings.touchControls === 'on' || (settings.touchControls === 'auto' && matchMedia('(pointer: coarse)').matches);
-  const playing = emulator.status === 'running' || emulator.status === 'paused';
 
   return (
     <div ref={shellRef} className={clsx('player-shell flex min-h-dvh flex-col bg-void', fullscreen && 'p-0')}>
@@ -414,12 +509,16 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
               <span className="size-1.5 rounded-full bg-current" />
               {emulator.status}
             </span>
-            <span>·</span>
-            <span>{fps ? `${fps.toFixed(1)} fps` : 'measuring'}</span>
-            {emulator.stats?.frameTimeMs ? (
+            {settings.showFps ? (
               <>
                 <span>·</span>
-                <span>{emulator.stats.frameTimeMs.toFixed(1)} ms/frame</span>
+                <span>{fps ? `${fps.toFixed(1)} fps` : 'measuring'}</span>
+                {emulator.stats?.frameTimeMs ? (
+                  <>
+                    <span>·</span>
+                    <span>{emulator.stats.frameTimeMs.toFixed(1)} ms/frame</span>
+                  </>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -464,8 +563,8 @@ export function Player({ game, report }: { game: GameRecord; report: AnalysisRep
           <div className="relative">
             <EmulatorStage
               canvasRef={canvasRef}
-              aspect={settings.aspect === 'auto' ? (game.platformId === 'gba' ? '4:3' : '4:3') : settings.aspect}
-              scale={settings.videoScale === '1x' ? 1 : settings.videoScale === '2x' ? 1 : 1}
+              aspect={resolveAspect(settings.aspect, game.platformId)}
+              scale={settings.videoScale}
               filters={settings.filters}
               playing={playing}
             >
@@ -727,7 +826,7 @@ function SettingsPanel({
       <h2 className="text-sm font-semibold">Player settings</h2>
       <Field label="Aspect ratio">
         <select className="input h-8 text-xs" value={settings.aspect} onChange={(e) => update({ aspect: e.target.value as never })}>
-          <option value="auto">Auto (native)</option>
+          <option value="auto">Auto (per platform)</option>
           <option value="4:3">4:3</option>
           <option value="16:9">16:9</option>
           <option value="stretch">Stretch to fill</option>
@@ -770,6 +869,15 @@ function SettingsPanel({
       <label className="flex items-center justify-between gap-2 text-xs text-ink-2">
         Show FPS overlay
         <input type="checkbox" checked={settings.showFps} onChange={(e) => update({ showFps: e.target.checked })} className="accent-[#d6ff4b]" />
+      </label>
+      <label className="flex items-center justify-between gap-2 text-xs text-ink-2">
+        Keep screen awake
+        <input
+          type="checkbox"
+          checked={settings.keepScreenAwake}
+          onChange={(e) => update({ keepScreenAwake: e.target.checked })}
+          className="accent-[#d6ff4b]"
+        />
       </label>
       <button className="btn btn-sm w-full" onClick={onToggleFullscreen}>
         {fullscreen ? <Minimize className="size-3.5" /> : <Maximize className="size-3.5" />}
@@ -847,9 +955,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function ScreenshotPreview({ url, onClose }: { url: string; onClose: () => void }) {
+  const dialogRef = useModal(onClose);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" onClick={onClose} role="dialog" aria-modal>
-      <div className="max-w-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="max-w-2xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Screenshot preview"
+        tabIndex={-1}
+      >
         <img src={url} alt="Captured screenshot" className="max-h-[75dvh] rounded-lg border border-line-bright" style={{ imageRendering: 'pixelated' }} />
         <div className="mt-2 flex justify-between gap-2">
           <p className="font-mono text-[10px] text-ink-4">Saved to downloads · usable as cover art</p>

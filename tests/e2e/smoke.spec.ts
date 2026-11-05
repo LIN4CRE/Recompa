@@ -160,3 +160,59 @@ test('unknown file produces a technical error, never a fake platform', async ({ 
   await expect(page.getByRole('tab', { name: /Execution methods 0/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Not runnable|Nothing to launch/i })).toBeDisabled();
 });
+
+test('"analyse immediately" off holds files back until confirmed', async ({ page }) => {
+  // The setting must genuinely gate intake: nothing is read or hashed until the
+  // user confirms. Turning the switch off has to change what happens next.
+  await page.getByRole('button', { name: /^Settings$/i }).first().click();
+  await expect(page).toHaveURL(/#\/settings/);
+  await page.getByRole('tab', { name: /Data & storage/i }).click();
+
+  const toggle = page.getByRole('switch', { name: /Analyse immediately when a file is dropped/i });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+  await page.getByRole('button', { name: /^Upload ROM$/i }).first().click();
+  await expect(page).toHaveURL(/#\/upload/);
+
+  const rom = buildTestRom();
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Choose ROM files/i }).first().click();
+  const chooser = await fileChooserPromise;
+  await chooser.setFiles({ name: TEST_ROM_NAME, mimeType: 'application/octet-stream', buffer: Buffer.from(rom) });
+
+  // Held back: still on /upload, with the confirmation panel showing the file.
+  await expect(page.getByText(/1 file ready to analyse/i)).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/#\/upload/);
+
+  // Confirming runs the same local analysis and lands on the report.
+  await page.getByRole('button', { name: /^Analyse 1 file$/i }).click();
+  await expect(page).toHaveURL(/#\/game\//, { timeout: 30_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/recompa-selftest/i);
+});
+
+test('"store ROM bytes" off analyses without keeping the file and says so', async ({ page }) => {
+  await page.getByRole('button', { name: /^Settings$/i }).first().click();
+  await page.getByRole('tab', { name: /Data & storage/i }).click();
+  const toggle = page.getByRole('switch', { name: /Store ROM bytes after analysis/i });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+  await page.getByRole('button', { name: /^Upload ROM$/i }).first().click();
+  const rom = buildTestRom();
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Choose ROM files/i }).first().click();
+  const chooser = await fileChooserPromise;
+  await chooser.setFiles({ name: TEST_ROM_NAME, mimeType: 'application/octet-stream', buffer: Buffer.from(rom) });
+
+  // Analysis still completes...
+  await expect(page).toHaveURL(/#\/game\//, { timeout: 30_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/recompa-selftest/i);
+  // ...but the launch button is honest about the missing payload instead of
+  // offering a play that is guaranteed to fail.
+  const launch = page.getByRole('button', { name: /File not kept/i });
+  await expect(launch).toBeVisible();
+  await expect(launch).toBeDisabled();
+});
