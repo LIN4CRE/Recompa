@@ -3,7 +3,17 @@ import type { GameRecord, SaveStateRecord } from '@/core/types';
 
 /** Save export helpers. Everything is generated locally and downloaded as a file. */
 
-function download(blob: Blob, filename: string): void {
+/**
+ * Trigger a local file download and release the blob URL only after the browser
+ * has had time to start it.
+ *
+ * Revoking the object URL synchronously after `a.click()` aborts the download in
+ * Firefox and Safari (the navigation to the blob happens on a later task). A
+ * 1 s delay is enough for every supported browser and keeps the URL short-lived.
+ * The anchor is attached to the document because Firefox requires a connected
+ * element for a programmatic download to fire.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -19,7 +29,7 @@ const slug = (value: string) => value.replace(/[^\w\-.]+/g, '_').slice(0, 64) ||
 
 export function downloadSram(game: GameRecord, bytes: Uint8Array): void {
   const ext = game.platformId === 'gba' ? 'sav' : game.platformId === 'nes' ? 'sav' : 'srm';
-  download(new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' }), `${slug(game.title)}.${ext}`);
+  downloadBlob(new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' }), `${slug(game.title)}.${ext}`);
 }
 
 export function downloadStateBundle(game: GameRecord, states: SaveStateRecord[]): void {
@@ -47,5 +57,5 @@ export function downloadStateBundle(game: GameRecord, states: SaveStateRecord[])
   });
   files['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
   const zipped = zipSync(files, { level: 6 });
-  download(new Blob([zipped.slice().buffer as ArrayBuffer], { type: 'application/zip' }), `${slug(game.title)}-states.zip`);
+  downloadBlob(new Blob([zipped.slice().buffer as ArrayBuffer], { type: 'application/zip' }), `${slug(game.title)}-states.zip`);
 }

@@ -192,7 +192,14 @@ export function plan(input: PlanInput): PlanResult {
     });
   }
 
-  // EmulatorJS (installed at setup time) is a real option for NES when present.
+  // An execution target must always resolve to a registered adapter. A
+  // descriptor that is only *described* (EmulatorJS NES is in PLANNED_ENGINES)
+  // must never become the target: the player would fail at launch with
+  // "Engine … is not installed in this build" even though the planner marked it
+  // runnable. The optional EmulatorJS setup installs the PlayStation core only,
+  // so `loader.js` is not evidence of an NES core.
+  const adaptableIds = new Set(ENGINE_ADAPTERS.map((a) => a.descriptor.id));
+  const emulatorjsAdapterPresent = adaptableIds.has(EMULATORJS_DESCRIPTOR.id);
   const emulatorjsInstalled = input.installedEngines?.has(EMULATORJS_DESCRIPTOR.id) ?? false;
   if (report.platform.id === 'nes') {
     considered.push({
@@ -200,13 +207,15 @@ export function plan(input: PlanInput): PlanResult {
       engineName: EMULATORJS_DESCRIPTOR.name,
       kind: 'wasm-emulator',
       priority: 4,
-      accepted: emulatorjsInstalled,
-      blockers: emulatorjsInstalled
-        ? []
-        : ['Runtime payload not installed (run `npm run fetch:emulatorjs`).'],
+      accepted: emulatorjsAdapterPresent && emulatorjsInstalled,
+      blockers: !emulatorjsAdapterPresent
+        ? ['No NES adapter for EmulatorJS is integrated in this release; the optional install provides the PlayStation core only.']
+        : emulatorjsInstalled
+          ? []
+          : ['Runtime payload not installed (run `npm run fetch:emulatorjs`).'],
       notes: [
         'Broader mapper coverage than jsnes, but GPL-3.0 and a larger download.',
-        emulatorjsInstalled ? 'Installed and available.' : EMULATORJS_DESCRIPTOR.unavailableReason ?? '',
+        EMULATORJS_DESCRIPTOR.unavailableReason ?? '',
       ].filter(Boolean),
     });
   }
@@ -235,7 +244,9 @@ export function plan(input: PlanInput): PlanResult {
 
   // Choose the best accepted candidate (lowest priority number) — but prefer a
   // WASM core over a JS core when both can run, because it is faster.
-  const accepted = considered.filter((c) => c.accepted);
+  // The adapter check is a hard invariant: `getAdapter()` must be able to
+  // resolve whatever the planner puts in `game.engineId`.
+  const accepted = considered.filter((c) => c.accepted && adaptableIds.has(c.engineId));
   accepted.sort((a, b) => a.priority - b.priority);
   const chosen = accepted[0] ?? null;
 

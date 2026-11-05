@@ -81,7 +81,7 @@ distributor when you serve them — see
 [`docs/PLAYSTATION.md`](docs/PLAYSTATION.md)).
 
 ```bash
-npm test           # unit tests (209)
+npm test           # unit tests (framework-free fixtures, real byte layouts)
 npm run typecheck  # tsc -b, no emit
 npm run build      # production build, self-fetches cores
 ```
@@ -110,9 +110,12 @@ has a **negative** test that feeds it noise and asserts it declines. A detector
 that guesses is treated as a bug, not a feature.
 
 ```bash
-npm test                      # 209 unit tests
+npm test                      # unit + processing-service integration tests
 npm run test:e2e:install      # then:
 npm run test:e2e              # Playwright, if you have browsers available
+# Restricted environment? Supply any Chromium binary instead:
+#   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium npm run test:e2e
+# See docs/DEPLOYMENT.md §1.
 ```
 
 ## Licence and legal

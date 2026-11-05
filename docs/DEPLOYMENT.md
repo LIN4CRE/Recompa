@@ -31,6 +31,26 @@ npm run preview        # http://localhost:4173, with COOP/COEP headers
 curl -sI http://localhost:4173/ | grep -i cross-origin
 ```
 
+### End-to-end tests
+
+```bash
+npm run test:e2e:install   # downloads Chromium from cdn.playwright.dev
+npm run test:e2e           # Playwright drives the real dev server
+```
+
+Where the Playwright CDN is blocked (offline CI, restricted sandboxes), point the
+config at any locally available Chromium/Chrome binary instead. No source change
+and no extra dependency is needed:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium \
+PLAYWRIGHT_CHROMIUM_ARGS="--no-sandbox,--disable-dev-shm-usage" \
+npm run test:e2e
+```
+
+The suite still runs against `npm run dev` with the real COOP/COEP headers, so
+this is an equivalent test — only the browser acquisition method differs.
+
 ## 2. Required headers
 
 ```
@@ -49,8 +69,13 @@ Also recommended:
 X-Content-Type-Options: nosniff
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: geolocation=(), microphone=(), camera=()
-Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:7333 http://localhost:7333; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' blob: http://127.0.0.1:7333 http://localhost:7333; worker-src 'self' blob: data:; child-src 'self' blob:; frame-src 'self' blob: about:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
 ```
+
+This block is copied verbatim from `vercel.json`, which is the authoritative file for the production
+host. `public/_headers` mirrors it for Netlify/Cloudflare Pages, and
+`tests/unit/security-headers.test.ts` fails if the two drift. `'unsafe-eval'` is required by
+EmulatorJS's ZIP decompressor — see `docs/SECURITY.md` before changing it.
 
 ## 3. Host configurations (committed)
 
@@ -84,11 +109,12 @@ Configuration (see `.env.example`):
 | `RIZIN_BIN` | Path to `rizin` (enables `/jobs/analyse-structure`) |
 | `GHIDRA_HEADLESS` | Path to `analyzeHeadless` |
 | `N64RECOMP_BIN` | Path to `N64Recomp` |
-| `REA_CLI`, `REA_MODEL`, `REA_API_KEY` | Enable the REA assistant bridge; all three are required |
 
-The service reports which tools are genuinely installed at `GET /capabilities`, and the UI shows
+The service reports only tools that have a real job endpoint at `GET /capabilities`, and the UI shows
 "not configured" for the rest. If you deploy the client on a public origin and want it to reach a
-local service, add that origin to `RECOMPA_ALLOWED_ORIGINS` **and** to the CSP `connect-src`.
+local service, add that origin to `RECOMPA_ALLOWED_ORIGINS` **and** to the CSP `connect-src`. The
+browser client only ever connects to loopback endpoints (`localhost`, `127.0.0.1`, `::1`); remote
+use goes through an SSH tunnel or an authenticated reverse proxy, as described below.
 
 ### Systemd unit (example, self-hosted)
 

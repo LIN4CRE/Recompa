@@ -18,6 +18,7 @@ import { useLibrary } from '@/state/library';
 import { getReport, getSram, listTests, listStates } from '@/db/database';
 import type { AnalysisReport, GameRecord, TestRun } from '@/core/types';
 import { hexdump } from '@/core/analyze';
+import { downloadBlob } from '@/lib/exports';
 import { CoverPicker, CoverArt } from '../components/CoverArt';
 import {
   bytes,
@@ -581,10 +582,5 @@ function downloadReport(report: AnalysisReport | null, game: GameRecord) {
     game: { id: game.id, title: game.title, compatibility: game.compatibility, engineId: game.engineId },
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${game.title.replace(/[^\w-]+/g, '_')}-report.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `${game.title.replace(/[^\w-]+/g, '_')}-report.json`);
 }

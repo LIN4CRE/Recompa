@@ -9,6 +9,7 @@ import {
   isProcessingAvailable,
   planN64Recomp,
   ProcessingError,
+  endpointLabel,
   type ServiceCapabilities,
 } from '@/lib/processing';
 import { Panel, SectionHeader, Spinner } from './primitives';
@@ -177,8 +178,9 @@ export function ProcessingPanel({ game }: { game?: GameRecord }) {
             <h3 className="text-base font-semibold">Send this ROM to your local service?</h3>
             <p className="mt-2 text-xs leading-relaxed text-ink-3">
               This is the only action in Recompa that transmits file bytes. They go to{' '}
-              <span className="font-mono text-ink-2">{settings.externalProcessingEndpoint}</span>, are written to a temporary
-              directory, read as data by a native tool and deleted afterwards. Nothing is sent to us or to any third party.
+              <span className="font-mono text-ink-2">{settings.externalProcessingEndpoint}</span> on this machine, are written to a
+              temporary directory, read as data by a native tool and deleted afterwards. Remote endpoints are refused, so nothing is
+              sent to us or to any third party.
             </p>
             <div className="mt-3 rounded-lg border border-line bg-black/25 p-2.5">
               <div className="text-[11px] font-medium text-ink">{game.title}</div>
@@ -189,7 +191,7 @@ export function ProcessingPanel({ game }: { game?: GameRecord }) {
                 Cancel
               </button>
               <button className="btn btn-ice btn-sm" onClick={() => void send()}>
-                Send to {new URL(settings.externalProcessingEndpoint).host}
+                Send to {endpointLabel(settings.externalProcessingEndpoint)}
               </button>
             </div>
           </div>

@@ -100,6 +100,27 @@ describe('planner selection — NES', () => {
     expect(jobPlan.executionStatement).toContain('emulation');
   });
 
+  it('never selects a described-but-unintegrated engine, even if reported "installed"', () => {
+    // Regression: the optional PlayStation setup installs loader.js. The old
+    // install probe took that as evidence of an NES FCEUmm core, so the planner
+    // chose `emulatorjs-nes` (priority 4) over jsnes (priority 5) even though
+    // no adapter exists — PLAY then failed with "Engine … is not installed".
+    const { plan: jobPlan, engine } = plan({
+      report: reportFor('nes', 'ines'),
+      environment: modernEnvironment,
+      installedEngines: new Set(['jsnes', 'mgba-wasm', 'emulatorjs-nes']),
+    });
+    expect(engine?.id).toBe('jsnes');
+    expect(jobPlan.target?.descriptor.id).toBe('jsnes');
+    const ghost = jobPlan.considered.find((c) => c.engineId === 'emulatorjs-nes');
+    expect(ghost?.accepted).toBe(false);
+    expect(ghost?.blockers.join(' ')).toMatch(/adapter/i);
+    // Every accepted candidate must resolve to a real adapter.
+    for (const candidate of jobPlan.considered.filter((c) => c.accepted)) {
+      expect(['jsnes', 'mgba-wasm', 'emulatorjs-psx']).toContain(candidate.engineId);
+    }
+  });
+
   it('rejects jsnes for an unsupported mapper and explains why', () => {
     const report = reportFor('nes', 'ines', {
       header: { strippedBytes: 16, fields: { mapper: 69 }, warnings: [] },

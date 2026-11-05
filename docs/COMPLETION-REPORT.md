@@ -3,6 +3,11 @@
 **Repository:** `LIN4CRE/Recompa` · **Branch:** `arena/e3fcb8d7-recompa`
 **Date:** 4 November 2026 · **Release:** v0.1.0
 
+> **Point-in-time report.** The branch name, test counts and "blocked" E2E status
+> below describe the v0.1.0 build only. Subsequent work is recorded in
+> `CHANGELOG.md` and the follow-up audit `docs/AUDIT-2026-11-05.md`; the E2E
+> suite is now executable even where the Playwright CDN is unreachable.
+
 ---
 
 ## A. Project overview

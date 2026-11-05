@@ -13,11 +13,15 @@ npm-debug.log*
 # Generated / fetched third-party runtime payloads (see scripts/fetch-*.mjs)
 public/cores/emulatorjs/
 public/cores/emulatorjs-installed.json
-public/test-roms/
 
 # Analyzer service artefacts
 server/model-cache/
 *.log
+
+# Playwright generated traces, screenshots and reports
+test-results/
+playwright-report/
+blob-report/
 
 # Vendored third-party emulator runtimes (GPL-3.0). Fetched by
 # scripts/fetch-emulatorjs.mjs at setup time; never committed.

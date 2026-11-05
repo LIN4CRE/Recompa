@@ -4,6 +4,94 @@ All notable changes to Recompa are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Audit and hardening pass, 5 November 2026. See `docs/AUDIT-2026-11-05.md` for
+the full findings, priorities and verification record.
+
+### Fixed
+
+- **PlayStation playback could not start.** The EmulatorJS adapter read
+  `iframe.contentDocument` before the frame was inserted into the document.
+  Chromium returns `null` for a detached iframe, so every launch threw
+  *"Could not create the emulator frame"*. `mountBootstrapFrame()` now connects
+  the frame first, restores the canvas and lets the caller revoke blob URLs on
+  failure. Guarded by a fake-DOM unit test and a real-browser Playwright test.
+- **The planner could choose an engine that does not exist.** `install-check.ts`
+  treated EmulatorJS `loader.js` as proof of an NES/FCEUmm core, so every NES
+  ROM was planned against `emulatorjs-nes` — an engine with no adapter, no
+  payload and no code path. PLAY then failed with *"Engine … is not installed in
+  this build"*. Discovery now probes the actual `pcsx_rearmed` core payload (or
+  the install manifest's `cores` array), always reports the two compiled-in
+  adapters, and never reports `emulatorjs-nes`. The planner additionally rejects
+  any accepted candidate without a registered adapter. Descriptor and
+  compatibility text no longer claim an FCEUmm payload is installed.
+- **The player could get stuck on "Loading core…" with status `stopped`.**
+  `useEmulator()` returns a fresh object on every render, but three `Player.tsx`
+  effects depended on that whole object — so the teardown effect (which calls
+  `stop()`) ran on *every* render and aborted the session immediately after it
+  was created. React 19 StrictMode's simulated remount made it deterministic.
+  Effects now depend on the hook's stable `start`/`stop`/`actions` members, and
+  the boot effect resets its guard in cleanup so a StrictMode remount can boot
+  again. The full Playwright flow now runs a real jsnes session at measured fps.
+- `npm run fetch:testroms` pointed at a file that did not exist. Removed; the
+  generated cartridge in `src/core/testrom.ts` is the supported path. A new
+  `repo-integrity` test now fails CI if any `package.json` script references a
+  missing `.mjs` file or the README documents an undefined npm command.
+- Four download handlers revoked their blob URL synchronously after `a.click()`,
+  which can abort downloads in Firefox/Safari. All local downloads now go
+  through one `downloadBlob()` helper that waits before revoking.
+- Screenshot previews leaked a `blob:` URL on every capture and on unmount; the
+  preview URL is now revoked on replacement, on close and on unmount.
+- `useSettings.reset()` no longer lets a pending 250 ms debounced write restore
+  the pre-reset values.
+- `docs/DEPLOYMENT.md` published an outdated CSP that did not match
+  `vercel.json`; the two are now identical and the README no longer hardcodes a
+  unit-test count.
+
+### Hardened
+
+- The PlayStation bootstrap posts status messages to the explicit deployment
+  origin instead of `'*'` (the parent still verifies `event.source`), and
+  `__recompaBoot()` is idempotent.
+- The processing client now refuses non-loopback endpoints. This matches the
+  deployed `connect-src`, makes the confirmation dialog's privacy promise true,
+  and prevents a mistyped endpoint from sending ROM bytes to another machine.
+- Removed the phantom `rea` capability from `GET /capabilities` and the unused
+  `REA_*` variables from `.env.example`. No endpoint ever consumed them, so the
+  service could report "configured" for a tool with no code path. Attribution and
+  the audit note now state plainly that REA is researched, not integrated.
+  `.env.example` gains the two real variables it was missing
+  (`RECOMPA_JOB_TIMEOUT_MS`, `N64RECOMP_BIN`).
+- `playwright.config.ts` accepts `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` and
+  `PLAYWRIGHT_CHROMIUM_ARGS`, so the E2E suite can run where the Playwright CDN
+  is blocked. Documented in `docs/DEPLOYMENT.md §1`.
+- All third-party GitHub Actions are now pinned to immutable commit SHAs, with
+  the resolved table and refresh procedure in `SECURITY.md`. Workflows already
+  used explicit least-privilege `permissions:` and
+  `persist-credentials: false`; a new repo-integrity test enforces both plus the
+  SHA pinning, and `SECURITY.md` documents the exact account-level settings that
+  cannot be expressed in a file.
+- `SECURITY.md` now publishes the deployed CSP verbatim instead of an outdated
+  copy, with the `unsafe-eval` / `wasm-unsafe-eval` trade-off explained.
+- `.gitignore` excludes Playwright's generated `test-results/`,
+  `playwright-report/` and `blob-report/` directories.
+
+### Tests added
+
+- `tests/unit/psx-frame.test.ts`, `tests/unit/install-check.test.ts`,
+  `tests/unit/player-lifecycle.test.ts`, `tests/unit/repo-integrity.test.ts`,
+  `tests/unit/processing.test.ts`, `tests/unit/processing-service.test.ts`
+  (the last starts the real loopback service on an ephemeral port),
+  `tests/e2e/psx-frame.spec.ts`.
+- `tests/e2e/smoke.spec.ts` was repaired rather than weakened: each test now
+  seeds its own IndexedDB state through the app's real self-test intake (Playwright
+  gives every test a fresh context), the stale `jsnes` locator became the visible
+  `JS emulation` badge, the screenshot preview is closed before the next control,
+  measured results are produced by a real verification run, and the unknown-file
+  case asserts the diagnostics actually rendered. fps, canvas, screenshot and
+  save-state assertions are intact.
+
 ## [0.1.0] — 2026-11-04
 
 First working release, and the first one that is **live**: <https://recompa.vercel.app>.

@@ -60,7 +60,7 @@ const HAND_MAINTAINED = [
   {
     name: 'REA (morluto/rea)',
     licence: 'MIT',
-    use: 'Optional agent-assisted reverse-engineering assistant, invoked only by the local processing service when configured.',
+    use: 'Researched during the technology audit. Not integrated, not vendored and not invoked by Recompa.',
     url: 'https://github.com/morluto/rea',
   },
   {

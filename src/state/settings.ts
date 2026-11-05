@@ -68,6 +68,12 @@ export const useSettings = create<SettingsState>((set, get) => ({
     get().update({ keybindings: { ...DEFAULT_KEYBINDINGS } });
   },
   reset() {
+    // A pending debounced update() would otherwise fire ~250 ms later and
+    // write the pre-reset values back over the defaults.
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
     set({ settings: { ...DEFAULT_SETTINGS } });
     void saveSettings(DEFAULT_SETTINGS);
   },
